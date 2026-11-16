@@ -4,17 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import (
-    Property, QByteArray, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt,
-    QThread, QTimer, Signal,
+    Property, QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, QThread, QTimer, Signal,
 )
 from PySide6.QtGui import (
-    QColor, QDragEnterEvent, QDropEvent, QIcon, QPainter, QPen, QPixmap, QStandardItem,
-    QStandardItemModel,
+    QColor, QDragEnterEvent, QDropEvent, QPainter, QPen, QStandardItem, QStandardItemModel,
 )
-from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGraphicsDropShadowEffect,
-    QHBoxLayout, QLabel, QListView, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QListView,
+    QPushButton, QVBoxLayout, QWidget,
 )
 
 from core.errors import ClipHubError
@@ -23,6 +20,8 @@ from tasks.converter import (
     SEPARATOR_FORMATS, VIDEO_TARGETS, ConverterTask, audio_sidecar_path,
     describe_conversion, suggest_output_path,
 )
+from ui import theme
+from ui.widgets import ElidedLabel, card, page_header, primary_button
 
 _VIDEO_EXTS = "*.mp4 *.mkv *.avi *.mov *.webm *.m4v *.flv *.wmv *.ts"
 _AUDIO_EXTS = "*.mp3 *.wav *.aac *.flac *.m4a *.ogg *.opus *.wma"
@@ -32,98 +31,6 @@ FILE_FILTERS = ";;".join([
     f"ไฟล์เสียง ({_AUDIO_EXTS})",
     "ทุกไฟล์ (*)",
 ])
-
-# Mockup tokens (cliphub-mockup.html :root) as QSS-friendly values.
-_ACCENT = "#ff7a1a"
-_STYLE = """
-QLabel { background: transparent; color: #f4f3f2; }
-QLabel#pageTitle { font-size: 26px; font-weight: 700; }
-QLabel#pageSubtitle { font-size: 14px; color: #a6a29c; }
-QLabel#badge { font-size: 12px; color: #a6a29c; padding: 7px 13px; border-radius: 16px;
-    background: rgba(28,28,30,148); border: 1px solid rgba(255,255,255,26); }
-QLabel#fieldLabel { font-size: 11px; font-weight: 600; color: #a6a29c; }
-QLabel#muted, QLabel#hint { font-size: 12px; color: #6d6a66; }
-QLabel#hint, QLabel#mono, QLabel#fileMeta, QLabel#fileSize, QLabel#outName {
-    font-family: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace; }
-QLabel#hint { font-size: 13px; }
-QLabel#fileMeta { font-size: 12px; color: #6d6a66; }
-QLabel#fileSize { font-size: 13px; color: #a6a29c; }
-QLabel#fileName { font-size: 14px; font-weight: 600; }
-QLabel#outName { font-size: 13px; color: #f4f3f2; }
-QLabel#toggleTitle { font-size: 14px; font-weight: 600; }
-QLabel#errorText { font-size: 13px; color: #f87171; }
-QLabel#okText { font-size: 13px; color: #34d399; }
-QLabel#noticeText { font-size: 13px; color: #a6a29c; }
-QLabel#dzTitle { font-size: 16px; font-weight: 600; }
-QLabel#dzSub { font-size: 13px; color: #6d6a66; }
-QLabel#dzIcon { background: rgba(255,122,26,36); border: 1px solid rgba(255,122,26,107);
-    border-radius: 16px; }
-QLabel#thumb { border-radius: 8px; background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-    stop:0 #2a2a2d, stop:1 #1b1b1d); }
-
-QFrame#card { background: rgba(28,28,30,148); border: 1px solid rgba(255,255,255,26);
-    border-radius: 16px; }
-QFrame#fileRow { background: rgba(255,255,255,7); border: 1px solid rgba(255,255,255,26);
-    border-radius: 12px; }
-QFrame#dropzone { border: 1px dashed rgba(255,255,255,41); border-radius: 16px;
-    background: rgba(255,122,26,10); }
-QFrame#dropzone:hover, QFrame#dropzone[drag="true"] {
-    border-color: rgba(255,122,26,107); background: rgba(255,122,26,30); }
-
-QPushButton#ghost { background: rgba(34,34,37,184); color: #f4f3f2; font-size: 13px;
-    border: 1px solid rgba(255,255,255,41); border-radius: 12px; padding: 9px 15px; }
-QPushButton#ghost:hover { background: rgba(255,255,255,20); }
-QPushButton#ghost:pressed { background: rgba(255,255,255,30); }
-QPushButton#primary { color: #1a0f04; font-size: 14px; font-weight: 600; border: none;
-    border-radius: 12px; padding: 0 22px; min-height: 48px;
-    background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #ff9147, stop:1 #ff7a1a); }
-QPushButton#primary:hover { background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
-    stop:0 #ffa05f, stop:1 #ff8430); }
-QPushButton#primary:pressed { background: #e85f00; }
-QPushButton#primary:disabled { background: rgba(255,255,255,18); color: #6d6a66; }
-
-QComboBox { min-height: 52px; padding: 0 40px 0 16px; font-size: 14px; color: #f4f3f2;
-    border-radius: 12px; border: 1px solid rgba(255,255,255,26);
-    background: rgba(10,10,11,166); }
-QComboBox:hover { border-color: rgba(255,255,255,41); }
-QComboBox:focus, QComboBox:on { border-color: rgba(255,122,26,107); }
-QComboBox:disabled { color: #6d6a66; }
-QComboBox::drop-down { border: none; width: 36px; }
-QComboBox#fmtCombo { min-height: 36px; min-width: 56px; padding: 0 34px 0 12px; font-size: 13px; }
-QComboBox QAbstractItemView { background: #1f1f21; color: #a6a29c; font-size: 14px;
-    border: 1px solid rgba(255,255,255,41); border-radius: 8px; padding: 6px; outline: 0;
-    selection-background-color: rgba(255,255,255,18); selection-color: #f4f3f2; }
-QComboBox QAbstractItemView::item { min-height: 32px; padding: 0 10px; border-radius: 6px; }
-QComboBox QAbstractItemView::item:disabled { color: #6d6a66; font-size: 11px; }
-"""
-
-_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
-    'stroke="currentColor" stroke-width="{w}" stroke-linecap="round" '
-    'stroke-linejoin="round">{body}</svg>'
-)
-_ICON_UPLOAD = (
-    '<path d="M12 15V3m0 0 4 4m-4-4-4 4"/>'
-    '<path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>'
-)
-_ICON_FILM = (
-    '<rect x="3" y="5" width="18" height="14" rx="2"/>'
-    '<path d="m10 9 5 3-5 3z" fill="currentColor" stroke="none"/>'
-)
-_ICON_SWAP = '<path d="M4 8h13m0 0-4-4m4 4-4 4"/><path d="M20 16H7m0 0 4 4m-4-4 4-4"/>'
-
-
-def _icon_pixmap(body: str, size: int, color: str, width: float = 1.8) -> QPixmap:
-    ratio = 2.0
-    svg = _SVG.format(w=width, body=body).replace("currentColor", color)
-    pixmap = QPixmap(int(size * ratio), int(size * ratio))
-    pixmap.setDevicePixelRatio(ratio)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    QSvgRenderer(QByteArray(svg.encode("utf-8"))).render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return pixmap
-
 
 def format_size(num_bytes: int) -> str:
     size = float(num_bytes)
@@ -164,55 +71,28 @@ class _ProbeThread(QThread):
         self.probed.emit(self._serial, info)
 
 
-class _ElidedLabel(QLabel):
+class _ElidedLabel(ElidedLabel):
     """Single-line label that shortens the middle of long file names."""
 
     def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._full = text
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.set_full_text(text)
-
-    def set_full_text(self, text: str) -> None:
-        self._full = text
-        self.setToolTip(text)
-        self._elide()
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        super().resizeEvent(event)
-        self._elide()
-
-    def _elide(self) -> None:
-        width = max(self.width(), 10)
-        self.setText(self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle, width))
+        super().__init__(text, Qt.TextElideMode.ElideMiddle, parent)
 
 
 class _Combo(QComboBox):
-    """QComboBox with a painted chevron (QSS cannot draw one without an image file)."""
+    """QComboBox whose popup is a QListView, so the stylesheet can round and pad its items."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setView(QListView())
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-    def paintEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        super().paintEvent(event)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor("#a6a29c" if self.isEnabled() else "#4a4846")
-        painter.setPen(QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
-                            Qt.PenJoinStyle.RoundJoin))
-        cx, cy = self.width() - 20.0, self.height() / 2
-        painter.drawPolyline([QPointF(cx - 4.5, cy - 2.5), QPointF(cx, cy + 2.5),
-                              QPointF(cx + 4.5, cy - 2.5)])
-
 
 class SwitchCheckBox(QCheckBox):
-    """A QCheckBox drawn as the mockup's pill switch (46x27). The text is for accessibility only."""
+    """A QCheckBox drawn as an Apple-style toggle. The text is for accessibility only."""
 
     def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
         super().__init__(text, parent)
-        self.setFixedSize(46, 27)
+        self.setFixedSize(46, 28)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._offset = 1.0 if self.isChecked() else 0.0
         self._animation = QPropertyAnimation(self, b"offset", self)
@@ -236,7 +116,7 @@ class SwitchCheckBox(QCheckBox):
     offset = Property(float, _get_offset, _set_offset)
 
     def sizeHint(self) -> QSize:  # noqa: N802 (Qt API)
-        return QSize(46, 27)
+        return QSize(46, 28)
 
     def hitButton(self, pos) -> bool:  # noqa: N802 (Qt API)
         return self.rect().contains(pos)
@@ -247,20 +127,22 @@ class SwitchCheckBox(QCheckBox):
         if not self.isEnabled():
             painter.setOpacity(0.4)
         mix = self._offset
-        off, on = QColor(255, 255, 255, 26), QColor(_ACCENT)
+        off, on = theme.color("fill_hover"), theme.color("switch_on")
         track = QColor(
             round(off.red() + (on.red() - off.red()) * mix),
             round(off.green() + (on.green() - off.green()) * mix),
             round(off.blue() + (on.blue() - off.blue()) * mix),
             round(off.alpha() + (on.alpha() - off.alpha()) * mix),
         )
-        border = QColor(255, 122, 26, 107) if self.hasFocus() else QColor(255, 255, 255, 26)
-        painter.setPen(QPen(border, 1))
+        painter.setPen(QPen(theme.color("accent"), 2) if self.hasFocus() else Qt.PenStyle.NoPen)
         painter.setBrush(track)
-        painter.drawRoundedRect(QRectF(0.5, 0.5, 45, 26), 13.5, 13.5)
+        painter.drawRoundedRect(QRectF(1, 1, 44, 26), 13, 13)
+        knob = QRectF(3.0 + 18.0 * mix, 3.0, 22, 22)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#e8e8e8"))
-        painter.drawEllipse(QRectF(3.0 + 19.0 * mix, 3.0, 21, 21))
+        painter.setBrush(QColor(0, 0, 0, 40))
+        painter.drawEllipse(knob.translated(0, 1))
+        painter.setBrush(theme.color("knob"))
+        painter.drawEllipse(knob)
 
 
 class _DropZone(QFrame):
@@ -272,24 +154,25 @@ class _DropZone(QFrame):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("dropzone")
+        self.setObjectName("DropZone")
         self.setAcceptDrops(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         icon = QLabel()
-        icon.setObjectName("dzIcon")
+        icon.setObjectName("DzIcon")
         icon.setFixedSize(60, 60)
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon.setPixmap(_icon_pixmap(_ICON_UPLOAD, 28, _ACCENT))
-        title = QLabel("ลากไฟล์วิดีโอมาวางที่นี่")
-        title.setObjectName("dzTitle")
+        self._icon = icon
+        theme.on_change(self._refresh_icon)
+        title = QLabel("ลากไฟล์มาวางที่นี่")
+        title.setObjectName("DzTitle")
         # two fixed lines instead of word wrap: wrapped labels in nested layouts get clipped
-        sub = QLabel("รองรับ MP4 · MKV · AVI · MOV · WEBM\nและไฟล์เสียง MP3 · WAV · AAC · FLAC")
-        sub.setObjectName("dzSub")
+        sub = QLabel("หรือคลิกเพื่อเลือกไฟล์")
+        sub.setObjectName("DzSub")
         self.browse_button = QPushButton("เลือกไฟล์จากเครื่อง")
-        self.browse_button.setObjectName("ghost")
         self.browse_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.browse_button.clicked.connect(self.browse_requested)
+        self.browse_button.hide()  # the whole drop zone is clickable
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 30, 24, 28)
@@ -300,6 +183,9 @@ class _DropZone(QFrame):
         layout.addWidget(self.browse_button, 0, Qt.AlignmentFlag.AlignHCenter)
         for label in (title, sub):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    def _refresh_icon(self) -> None:
+        self._icon.setPixmap(theme.icon_pixmap("upload", theme.hex_color("accent"), 28, 2.0))
 
     def _set_drag(self, active: bool) -> None:
         self.setProperty("drag", active)
@@ -339,14 +225,9 @@ class _DropZone(QFrame):
         super().mousePressEvent(event)
 
 
-def _card(tight: bool = False) -> tuple[QFrame, QVBoxLayout]:
-    frame = QFrame()
-    frame.setObjectName("card")
-    layout = QVBoxLayout(frame)
-    margin = 16 if tight else 20
-    layout.setContentsMargins(margin, margin, margin, margin)
-    layout.setSpacing(12)
-    return frame, layout
+def _card(tight: bool = False):
+    margin = 14 if tight else 20
+    return card(spacing=12, margins=(margin, margin - 2, margin, margin))
 
 
 def _label(text: str, name: str = "") -> QLabel:
@@ -362,7 +243,6 @@ class ConverterPage(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ConverterPage")
-        self.setStyleSheet(_STYLE)
         self._input_path: str | None = None
         self._ready = False          # probe finished OK for the current file
         self._serial = 0
@@ -388,25 +268,14 @@ class ConverterPage(QWidget):
         if app is not None:
             app.aboutToQuit.connect(self._wait_probes)
         self._refresh()
+        theme.on_change(self._refresh_icons)
+
+    def _refresh_icons(self) -> None:
+        self._thumb.setPixmap(theme.icon_pixmap("film", theme.hex_color("text2"), 22, 1.6))
 
     # ----- layout -------------------------------------------------------------------
     def _build_header(self) -> QHBoxLayout:
-        text = QVBoxLayout()
-        text.setSpacing(6)
-        text.addWidget(_label("แปลงฟอร์แมต & แยกเสียง", "pageTitle"))
-        # fixed line breaks, not word wrap: wrapped labels make the page height depend on its
-        # width, and nested layouts then squeeze the cards below
-        subtitle = _label(
-            "เปลี่ยนนามสกุลไฟล์วิดีโอหรือเสียง\n"
-            "และแยกสตรีมเสียงออกจากวิดีโอโดยไม่ทำให้ต้นฉบับเสียหาย\n"
-            "ทำงานออฟไลน์เต็มรูปแบบ", "pageSubtitle")
-        subtitle.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        text.addWidget(subtitle)
-        row = QHBoxLayout()
-        row.setSpacing(16)
-        row.addLayout(text, 1)
-        row.addWidget(_label("ประมวลผลด้วย FFmpeg", "badge"), 0, Qt.AlignmentFlag.AlignTop)
-        return row
+        return page_header("แปลงไฟล์")
 
     def _build_drop_card(self) -> QFrame:
         card, layout = _card()
@@ -415,7 +284,7 @@ class ConverterPage(QWidget):
         self.dropzone.drop_rejected.connect(lambda message: self._set_notice(message, error=True))
         self.dropzone.browse_requested.connect(self._browse)
         self.notice_label = _ElidedLabel()
-        self.notice_label.setObjectName("noticeText")
+        self.notice_label.setObjectName("NoticeText")
         self.notice_label.hide()
         layout.addWidget(self.dropzone)
         layout.addWidget(self.notice_label)
@@ -425,30 +294,30 @@ class ConverterPage(QWidget):
         self.file_card, layout = _card(tight=True)
         self.file_card.hide()
         row_frame = QFrame()
-        row_frame.setObjectName("fileRow")
+        row_frame.setObjectName("FileRow")
         row = QHBoxLayout(row_frame)
         row.setContentsMargins(14, 14, 14, 14)
         row.setSpacing(14)
 
         thumb = QLabel()
-        thumb.setObjectName("thumb")
-        thumb.setFixedSize(64, 44)
+        thumb.setObjectName("Thumb")
+        thumb.setFixedSize(56, 44)
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        thumb.setPixmap(_icon_pixmap(_ICON_FILM, 22, "#6d6a66", width=1.6))
+        self._thumb = thumb
         meta = QVBoxLayout()
         meta.setSpacing(2)
         self.file_name_label = _ElidedLabel()
-        self.file_name_label.setObjectName("fileName")
-        self.file_meta_label = _label("", "fileMeta")
+        self.file_name_label.setObjectName("FileName")
+        self.file_meta_label = _label("", "FileMeta")
         meta.addWidget(self.file_name_label)
         meta.addWidget(self.file_meta_label)
-        self.file_size_label = _label("", "fileSize")
+        self.file_size_label = _label("", "FileSize")
 
         row.addWidget(thumb)
         row.addLayout(meta, 1)
         row.addWidget(self.file_size_label)
         self.file_error_label = _ElidedLabel()
-        self.file_error_label.setObjectName("errorText")
+        self.file_error_label.setObjectName("ErrorText")
         self.file_error_label.hide()
         layout.addWidget(row_frame)
         layout.addWidget(self.file_error_label)
@@ -461,7 +330,7 @@ class ConverterPage(QWidget):
 
         left = QVBoxLayout()
         left.setSpacing(9)
-        left.addWidget(_label("แปลงเป็น", "fieldLabel"))
+        left.addWidget(_label("แปลงเป็น", "FieldLabel"))
         self.target_combo = _Combo()
         model = QStandardItemModel(self.target_combo)
         groups = (
@@ -483,10 +352,10 @@ class ConverterPage(QWidget):
 
         right = QVBoxLayout()
         right.setSpacing(9)
-        right.addWidget(_label("ไฟล์ผลลัพธ์", "fieldLabel"))
+        right.addWidget(_label("ไฟล์ผลลัพธ์", "FieldLabel"))
         self.output_label = _ElidedLabel()
-        self.output_label.setObjectName("outName")
-        self.output_label.setMinimumHeight(52)
+        self.output_label.setObjectName("OutName")
+        self.output_label.setFixedHeight(theme.CONTROL_HEIGHT)
         right.addWidget(self.output_label)
 
         grid.addLayout(left, 1)
@@ -500,12 +369,13 @@ class ConverterPage(QWidget):
         row.setSpacing(14)
         text = QVBoxLayout()
         text.setSpacing(2)
-        text.addWidget(_label("แยกสตรีมเสียงออกจากวิดีโอ", "toggleTitle"))
-        self.separator_hint = _label("", "muted")
+        text.addWidget(_label("แยกไฟล์เสียงออกมาด้วย", "ToggleTitle"))
+        self.separator_hint = _label("", "Note")
         text.addWidget(self.separator_hint)
+        self.separator_hint.hide()  # the switch is simply disabled for audio targets
 
         self.audio_format_combo = _Combo()
-        self.audio_format_combo.setObjectName("fmtCombo")
+        self.audio_format_combo.setObjectName("FmtCombo")
         for ext in SEPARATOR_FORMATS:
             self.audio_format_combo.addItem(ext.upper(), ext)
         self.audio_format_combo.currentIndexChanged.connect(self._refresh)
@@ -523,21 +393,12 @@ class ConverterPage(QWidget):
         box.setSpacing(8)
         row = QHBoxLayout()
         row.setSpacing(18)
-        self.start_button = QPushButton("เริ่มแปลงไฟล์")
-        self.start_button.setObjectName("primary")
-        self.start_button.setIcon(QIcon(_icon_pixmap(_ICON_SWAP, 19, "#1a0f04", width=2.0)))
-        self.start_button.setIconSize(QSize(19, 19))
-        self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_button = primary_button("เริ่มแปลงไฟล์", "convert")
         self.start_button.clicked.connect(self._submit)
-        self._glow = QGraphicsDropShadowEffect(self.start_button)
-        self._glow.setBlurRadius(26)
-        self._glow.setOffset(0, 4)
-        self._glow.setColor(QColor(255, 122, 26, 110))
-        self.start_button.setGraphicsEffect(self._glow)
-        self.hint_label = _label("", "hint")
+        self.hint_label = _label("", "Hint")
         row.addWidget(self.start_button)
         row.addWidget(self.hint_label, 1)
-        self.status_label = _label("", "okText")
+        self.status_label = _label("", "OkText")
         box.addLayout(row)
         box.addWidget(self.status_label)
         return box
@@ -565,10 +426,9 @@ class ConverterPage(QWidget):
         )
         ready = self._input_path is not None and self._ready
         self.start_button.setEnabled(ready)
-        self._glow.setEnabled(ready)
         if self._input_path is None:
             self.output_label.set_full_text("—")
-            self.hint_label.setText("เลือกไฟล์ต้นทางก่อนเริ่มแปลง")
+            self.hint_label.setText("")
             return
         sidecar = self._sidecar_format()
         output = suggest_output_path(
@@ -580,7 +440,7 @@ class ConverterPage(QWidget):
         )
 
     def _set_notice(self, message: str, error: bool = False) -> None:
-        self.notice_label.setObjectName("errorText" if error else "noticeText")
+        self.notice_label.setObjectName("ErrorText" if error else "NoticeText")
         self.notice_label.style().unpolish(self.notice_label)
         self.notice_label.style().polish(self.notice_label)
         self.notice_label.set_full_text(message)

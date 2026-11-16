@@ -7,7 +7,6 @@ from typing import Any
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
-    QButtonGroup,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -30,7 +29,9 @@ from tasks.downloader import (
     format_duration,
     is_valid_youtube_url,
 )
-from ui.theme import ACCENT, TEXT_2, make_icon, repolish
+from ui import overlays, theme
+from ui.theme import repolish
+from ui.widgets import Segmented, bind_icon, card as _glass_card, field_label as _field_label, page_header, primary_button
 
 # (quality key, label) in the order of the mockup dropdown
 QUALITY_LABELS = [
@@ -66,19 +67,8 @@ class MetadataWorker(QThread):
             self.fetched.emit(self.url, metadata)
 
 
-def _field_label(text: str) -> QLabel:
-    label = QLabel(text)
-    label.setObjectName("FieldLabel")
-    return label
-
-
-def _card() -> tuple[QFrame, QVBoxLayout]:
-    card = QFrame()
-    card.setObjectName("Card")
-    layout = QVBoxLayout(card)
-    layout.setContentsMargins(20, 20, 20, 20)
-    layout.setSpacing(9)
-    return card, layout
+def _card():
+    return _glass_card(spacing=10)
 
 
 class DownloaderPage(QWidget):
@@ -111,32 +101,27 @@ class DownloaderPage(QWidget):
         self.folder_button.clicked.connect(self.choose_folder)
         self.download_button.clicked.connect(self.start_download)
         self._on_options_changed()
+        theme.on_change(self._refresh_icons)
+
+    def _refresh_icons(self) -> None:
+        self._link_action.setIcon(theme.themed_icon("link", "text2", 18))
+        self._folder_action.setIcon(theme.themed_icon("folder", "text2", 18))
 
     # ----- layout -----
-    def _build_header(self) -> QVBoxLayout:
-        title = QLabel("ดาวน์โหลดวิดีโอ")
-        title.setObjectName("PageTitle")
-        subtitle = QLabel("ดึงคลิปจาก YouTube ผ่าน URL เลือกความละเอียดและฟอร์แมต หรือดึงเฉพาะเสียงได้ในคลิกเดียว")
-        subtitle.setObjectName("PageSubtitle")
-        subtitle.setWordWrap(True)
-        box = QVBoxLayout()
-        box.setSpacing(6)
-        box.setContentsMargins(0, 0, 0, 6)
-        box.addWidget(title)
-        box.addWidget(subtitle)
-        return box
+    def _build_header(self):
+        return page_header("ดาวน์โหลด")
 
     def _build_url_card(self) -> QFrame:
         card, layout = _card()
         self.url_edit = QLineEdit()
-        self.url_edit.setPlaceholderText("วางลิงก์ YouTube เช่น https://youtube.com/watch?v=…")
+        self.url_edit.setPlaceholderText("วางลิงก์ YouTube")
         self.url_edit.setClearButtonEnabled(True)
-        self.url_edit.addAction(make_icon("link", TEXT_2, 19), QLineEdit.ActionPosition.LeadingPosition)
+        self._link_action = self.url_edit.addAction(theme.themed_icon("link"), QLineEdit.ActionPosition.LeadingPosition)
         self.paste_button = QPushButton("วาง")
-        self.paste_button.setIcon(make_icon("paste", TEXT_2, 17))
+        bind_icon(self.paste_button, "paste", "text2", 16)
         self.fetch_button = QPushButton("ดึงข้อมูล")
         for button in (self.paste_button, self.fetch_button):
-            button.setFixedHeight(52)
+            button.setObjectName("FieldButton")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
         row = QHBoxLayout()
         row.setSpacing(10)
@@ -146,7 +131,6 @@ class DownloaderPage(QWidget):
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
         self.status_label.hide()
-        layout.addWidget(_field_label("ลิงก์วิดีโอ"))
         layout.addLayout(row)
         layout.addWidget(self.status_label)
         return card
@@ -162,7 +146,7 @@ class DownloaderPage(QWidget):
         play.setObjectName("PosterPlay")
         play.setFixedSize(46, 46)
         play.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        play.setPixmap(make_icon("play", "#1a0f04", 20).pixmap(20, 20))
+        play.setPixmap(theme.icon_pixmap("play", "#1d1d1f", 20))
         self.duration_badge = QLabel("00:00")
         self.duration_badge.setObjectName("PosterDuration")
         poster_layout = QGridLayout(poster)
@@ -190,7 +174,6 @@ class DownloaderPage(QWidget):
         self.chips_layout.setHorizontalSpacing(8)
         self.chips_layout.setVerticalSpacing(8)
         layout.addLayout(top)
-        layout.addWidget(_field_label("ความละเอียดที่มี"))
         layout.addLayout(self.chips_layout)
         return card
 
@@ -201,27 +184,20 @@ class DownloaderPage(QWidget):
             self.quality_combo.addItem(label, key)
         self.quality_combo.setCurrentIndex(self.quality_combo.findData(DEFAULT_QUALITY))
 
-        self.video_button = self._segment_button("วิดีโอ · MP4", "video")
-        self.audio_button = self._segment_button("เสียง · MP3", "audio")
-        self.mode_group = QButtonGroup(self)
-        self.mode_group.addButton(self.video_button)
-        self.mode_group.addButton(self.audio_button)
+        segmented = Segmented()
+        segmented.setFixedHeight(theme.CONTROL_HEIGHT)
+        self.video_button = segmented.add("วิดีโอ · MP4", icon="video")
+        self.audio_button = segmented.add("เสียง · MP3", icon="audio")
+        self.mode_group = segmented.group
         self.video_button.setChecked(True)
-        segmented = QFrame()
-        segmented.setObjectName("Segmented")
-        seg_layout = QHBoxLayout(segmented)
-        seg_layout.setContentsMargins(4, 4, 4, 4)
-        seg_layout.setSpacing(4)
-        seg_layout.addWidget(self.video_button, 1)
-        seg_layout.addWidget(self.audio_button, 1)
 
         left = QVBoxLayout()
         left.setSpacing(9)
-        left.addWidget(_field_label("ความละเอียด"))
+        left.addWidget(_field_label("คุณภาพ"))
         left.addWidget(self.quality_combo)
         right = QVBoxLayout()
         right.setSpacing(9)
-        right.addWidget(_field_label("รูปแบบไฟล์"))
+        right.addWidget(_field_label("รูปแบบ"))
         right.addWidget(segmented)
         right.addStretch(1)
         columns = QHBoxLayout()
@@ -231,39 +207,26 @@ class DownloaderPage(QWidget):
         layout.addLayout(columns)
         return card
 
-    def _segment_button(self, text: str, icon_key: str) -> QPushButton:
-        button = QPushButton(text)
-        button.setProperty("seg", True)
-        button.setCheckable(True)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setIcon(make_icon(icon_key, TEXT_2, 17))
-        button.toggled.connect(
-            lambda checked, b=button, k=icon_key: b.setIcon(make_icon(k, ACCENT if checked else TEXT_2, 17))
-        )
-        return button
-
     def _build_folder_card(self) -> QFrame:
         card, layout = _card()
         self.folder_edit = QLineEdit(str(DEFAULT_OUTPUT_DIR))
-        self.folder_edit.addAction(make_icon("folder", TEXT_2, 19), QLineEdit.ActionPosition.LeadingPosition)
+        self._folder_action = self.folder_edit.addAction(theme.themed_icon("folder"), QLineEdit.ActionPosition.LeadingPosition)
         self.folder_button = QPushButton("เลือก…")
-        self.folder_button.setFixedHeight(52)
+        self.folder_button.setObjectName("FieldButton")
         self.folder_button.setCursor(Qt.CursorShape.PointingHandCursor)
         row = QHBoxLayout()
         row.setSpacing(10)
         row.addWidget(self.folder_edit, 1)
         row.addWidget(self.folder_button)
-        layout.addWidget(_field_label("โฟลเดอร์ปลายทาง"))
+        layout.addWidget(_field_label("บันทึกที่"))
         layout.addLayout(row)
         return card
 
     def _build_footer(self) -> QHBoxLayout:
-        self.download_button = QPushButton("ดาวน์โหลด")
-        self.download_button.setObjectName("PrimaryButton")
-        self.download_button.setIcon(make_icon("download", "#1a0f04", 19, 2.0))
-        self.download_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.download_button = primary_button("ดาวน์โหลด", "download")
         self.hint_label = QLabel()
         self.hint_label.setObjectName("Hint")
+        self.hint_label.hide()  # the selected options are already visible above
         row = QHBoxLayout()
         row.setContentsMargins(0, 4, 0, 0)
         row.setSpacing(18)
@@ -407,6 +370,8 @@ class DownloaderPage(QWidget):
         self._set_status("เพิ่มงานเข้าคิวแล้ว", "ok")
 
     def _warn(self, title: str, text: str) -> None:
+        if overlays.notify("error", title, text):
+            return
         box = QMessageBox(QMessageBox.Icon.Warning, title, text, QMessageBox.StandardButton.Ok, self)
         box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         box.open()  # non-blocking; the page stays responsive

@@ -4,10 +4,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFontDatabase
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QButtonGroup,
+    QApplication,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -25,6 +25,9 @@ from PySide6.QtWidgets import (
 
 from core.errors import ClipHubError
 from tasks.subtitle import Cue, SubtitleTask, format_srt_time, write_subtitles
+from ui import overlays, theme
+from ui.theme import repolish
+from ui.widgets import GlassCard, Segmented, page_header, primary_button
 
 AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"}
 VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
@@ -37,56 +40,6 @@ MEDIA_FILTER = (
 LANGUAGES = (("th", "ไทย"), ("en", "English"))
 MODELS = (("tiny", "เร็วสุด"), ("base", "สมดุล"), ("small", "แม่นยำ"))
 DEFAULT_MODEL = "base"
-
-_STYLE = """
-QFrame#card { background: rgba(28, 28, 30, 60%); border: 1px solid rgba(255, 255, 255, 10%); border-radius: 16px; }
-QLabel { background: transparent; }
-QLabel#pageTitle { font-size: 26px; font-weight: 700; color: #f4f3f2; }
-QLabel#pageLead { font-size: 14px; color: #a6a29c; }
-QLabel#badge { color: #f4f3f2; font-size: 12px; background: rgba(255, 122, 26, 14%);
-    border: 1px solid rgba(255, 122, 26, 42%); border-radius: 15px; padding: 6px 13px; }
-QLabel#fieldLabel { font-size: 11px; font-weight: 600; color: #a6a29c; }
-QLabel#hint { font-size: 12px; color: #6d6a66; }
-QLabel#status { font-size: 12.5px; color: #a6a29c; }
-QFrame#fileRow { background: rgba(255, 255, 255, 3%); border: 1px solid rgba(255, 255, 255, 10%); border-radius: 12px; }
-QLabel#fileThumb { background: #2a2440; color: #a78bfa; border-radius: 8px; font-size: 20px; }
-QLabel#fileName { font-size: 13.5px; font-weight: 600; color: #f4f3f2; }
-QLabel#fileMeta { font-size: 12px; color: #6d6a66; }
-QLabel#fileSize { font-size: 12.5px; color: #a6a29c; }
-QFrame#seg { background: rgba(10, 10, 11, 60%); border: 1px solid rgba(255, 255, 255, 10%); border-radius: 12px; }
-QPushButton#segButton { background: transparent; color: #a6a29c; border: 1px solid transparent;
-    border-radius: 8px; padding: 10px 14px; font-size: 13.5px; font-weight: 500; }
-QPushButton#segButton:hover { color: #f4f3f2; }
-QPushButton#segButton:checked { background: #2e2e30; color: #f4f3f2; border-color: rgba(255, 255, 255, 16%); }
-QComboBox { background: rgba(10, 10, 11, 60%); color: #f4f3f2; border: 1px solid rgba(255, 255, 255, 10%);
-    border-radius: 12px; padding: 10px 14px; font-size: 13.5px; min-height: 22px; }
-QComboBox:hover { border-color: rgba(255, 255, 255, 16%); }
-QComboBox QAbstractItemView { background: #2e2e30; color: #f4f3f2; border: 1px solid rgba(255, 255, 255, 16%);
-    selection-background-color: rgba(255, 122, 26, 14%); selection-color: #f4f3f2; outline: none; }
-QLabel#chip { font-size: 12px; color: #a6a29c; background: rgba(255, 255, 255, 3%);
-    border: 1px solid rgba(255, 255, 255, 10%); border-radius: 12px; padding: 4px 13px; }
-QLabel#chip[on="true"] { color: #f4f3f2; background: rgba(255, 122, 26, 14%); border-color: rgba(255, 122, 26, 42%); }
-QLabel#empty { color: #6d6a66; font-size: 13px; padding: 28px 12px; }
-QTableWidget { background: transparent; border: none; color: #f4f3f2; font-size: 13.5px; outline: none; }
-QTableWidget::item { padding: 6px 8px; border: none; }
-QTableWidget::item:selected { background: rgba(255, 122, 26, 14%); color: #f4f3f2; }
-QHeaderView { background: transparent; border: none; }
-QHeaderView::section { background: transparent; color: #6d6a66; border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 10%); padding: 6px 8px; font-size: 11px; font-weight: 600; }
-QPushButton#primary { color: #1a0f04; font-size: 14px; font-weight: 600; min-height: 48px; padding: 0 24px;
-    border: none; border-radius: 12px;
-    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #ff9147, stop: 1 #ff7a1a); }
-QPushButton#primary:pressed { background: #e85f00; }
-QPushButton#primary:disabled { color: rgba(26, 15, 4, 55%); background: rgba(255, 122, 26, 25%); }
-QPushButton#ghost { color: #f4f3f2; font-size: 13px; font-weight: 500; min-height: 48px; padding: 0 18px;
-    background: rgba(34, 34, 37, 72%); border: 1px solid rgba(255, 255, 255, 16%); border-radius: 12px; }
-QPushButton#ghost:hover { background: rgba(255, 255, 255, 8%); }
-QPushButton#ghost:disabled { color: #6d6a66; border-color: rgba(255, 255, 255, 10%); }
-QPushButton#pick { color: #f4f3f2; font-size: 13px; font-weight: 500; padding: 9px 15px;
-    background: rgba(34, 34, 37, 72%); border: 1px solid rgba(255, 255, 255, 16%); border-radius: 12px; }
-QPushButton#pick:hover { background: rgba(255, 255, 255, 8%); }
-"""
-
 
 def _format_size(size: int) -> str:
     value = float(size)
@@ -116,28 +69,21 @@ class SubtitlePage(QWidget):
         self._cues: tuple[Cue, ...] = ()
         self._last_dir = str(Path.home())
         self._build_ui()
-        self.setStyleSheet(_STYLE)
+        theme.on_change(self._on_theme)
+
+    def _on_theme(self) -> None:
+        self._refresh_thumb()
+        if self._cues:
+            self._fill_table()  # item colours are set per item, not by the stylesheet
 
     # ---- UI construction ------------------------------------------------
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(16)
 
-        head = QHBoxLayout()
-        head.setSpacing(16)
-        titles = QVBoxLayout()
-        titles.setSpacing(6)
-        titles.addWidget(_label("ถอดเสียง & สร้างซับไตเติล", "pageTitle"))
-        titles.addWidget(_label(
-            "แปลงเสียงพูดเป็นข้อความด้วย AI (faster-whisper) พร้อมซิงก์ Timecode อัตโนมัติ "
-            "รองรับไทย/อังกฤษ ส่งออกเป็น .srt และ .vtt",
-            "pageLead", wrap=True,
-        ))
-        head.addLayout(titles, 1)
-        head.addWidget(_label("faster-whisper", "badge"), 0, Qt.AlignmentFlag.AlignTop)
-        root.addLayout(head)
+        root.addLayout(page_header("ซับไตเติล"))
 
         root.addWidget(self._build_file_card())
         root.addWidget(self._build_options_card())
@@ -145,14 +91,13 @@ class SubtitlePage(QWidget):
 
         actions = QHBoxLayout()
         actions.setSpacing(12)
-        self._submit_btn = QPushButton("ถอดเสียงด้วย AI")
-        self._submit_btn.setObjectName("primary")
+        self._submit_btn = primary_button("ถอดเสียงด้วย AI", "sparkles")
         self._submit_btn.setEnabled(False)
         self._submit_btn.clicked.connect(self._submit)
         self._export_srt_btn = QPushButton("ส่งออก .srt")
         self._export_vtt_btn = QPushButton("ส่งออก .vtt")
         for button, suffix in ((self._export_srt_btn, ".srt"), (self._export_vtt_btn, ".vtt")):
-            button.setObjectName("ghost")
+            button.setObjectName("FieldButton")
             button.setEnabled(False)
             button.clicked.connect(lambda _checked=False, s=suffix: self._export(s))
         for button in (self._submit_btn, self._export_srt_btn, self._export_vtt_btn):
@@ -161,35 +106,35 @@ class SubtitlePage(QWidget):
         actions.addStretch(1)
         root.addLayout(actions)
 
-        self._status = _label("", "status", wrap=True)
+        self._status = _label("", "Status", wrap=True)
         root.addWidget(self._status)
         self._set_status("")
         self._refresh_preview_state()
 
     def _build_file_card(self) -> QFrame:
-        card = QFrame()
-        card.setObjectName("card")
+        card = GlassCard("card")
         outer = QVBoxLayout(card)
-        outer.setContentsMargins(16, 16, 16, 16)
+        outer.setContentsMargins(14, 14, 14, 14)
 
         row = QFrame()
-        row.setObjectName("fileRow")
+        row.setObjectName("FileRow")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(14)
 
-        self._thumb = _label("♪", "fileThumb")
-        self._thumb.setFixedSize(64, 44)
+        self._thumb = _label("", "Thumb")
+        self._thumb_icon = "music"
+        self._thumb.setFixedSize(56, 44)
         self._thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         meta = QVBoxLayout()
         meta.setSpacing(2)
-        self._file_name = _label("ยังไม่ได้เลือกไฟล์", "fileName")
-        self._file_meta = _label("เลือกไฟล์เสียงหรือวิดีโอที่ต้องการถอดเสียง", "fileMeta")
+        self._file_name = _label("ยังไม่ได้เลือกไฟล์", "FileName")
+        self._file_meta = _label("", "FileMeta")
         meta.addWidget(self._file_name)
         meta.addWidget(self._file_meta)
-        self._file_size = _label("", "fileSize")
+        self._file_meta.hide()  # shown once a file is chosen
+        self._file_size = _label("", "FileSize")
         pick = QPushButton("เลือกไฟล์")
-        pick.setObjectName("pick")
         pick.setCursor(Qt.CursorShape.PointingHandCursor)
         pick.clicked.connect(self._choose_file)
 
@@ -201,8 +146,7 @@ class SubtitlePage(QWidget):
         return card
 
     def _build_options_card(self) -> QFrame:
-        card = QFrame()
-        card.setObjectName("card")
+        card = GlassCard("card")
         grid = QGridLayout(card)
         grid.setContentsMargins(20, 18, 20, 18)
         grid.setHorizontalSpacing(16)
@@ -210,25 +154,15 @@ class SubtitlePage(QWidget):
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
-        grid.addWidget(_label("ภาษาที่พูด", "fieldLabel"), 0, 0)
-        grid.addWidget(_label("ขนาดโมเดล AI", "fieldLabel"), 0, 1)
+        grid.addWidget(_label("ภาษา", "FieldLabel"), 0, 0)
+        grid.addWidget(_label("โมเดล AI", "FieldLabel"), 0, 1)
 
-        seg = QFrame()
-        seg.setObjectName("seg")
-        seg_layout = QHBoxLayout(seg)
-        seg_layout.setContentsMargins(4, 4, 4, 4)
-        seg_layout.setSpacing(4)
-        self._lang_group = QButtonGroup(self)
-        self._lang_group.setExclusive(True)
+        seg = Segmented()
+        seg.setFixedHeight(theme.CONTROL_HEIGHT)
+        self._lang_group = seg.group
         self._lang_buttons: dict[str, QPushButton] = {}
         for code, text in LANGUAGES:
-            button = QPushButton(text)
-            button.setObjectName("segButton")
-            button.setCheckable(True)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            self._lang_group.addButton(button)
-            self._lang_buttons[code] = button
-            seg_layout.addWidget(button, 1)
+            self._lang_buttons[code] = seg.add(text)
         self._lang_buttons["th"].setChecked(True)
         grid.addWidget(seg, 1, 0)
 
@@ -237,23 +171,19 @@ class SubtitlePage(QWidget):
             self._model_combo.addItem(f"{size} · {note}", size)
         self._model_combo.setCurrentIndex(self._model_combo.findData(DEFAULT_MODEL))
         grid.addWidget(self._model_combo, 1, 1)
-        grid.addWidget(
-            _label("ครั้งแรกที่ใช้โมเดลแต่ละขนาด ต้องดาวน์โหลดโมเดลจากอินเทอร์เน็ต", "hint", wrap=True),
-            2, 1,
-        )
+        self._model_combo.setToolTip("ครั้งแรกที่ใช้โมเดลแต่ละขนาด จะดาวน์โหลดโมเดลจากอินเทอร์เน็ต")
         return card
 
     def _build_preview_card(self) -> QFrame:
-        card = QFrame()
-        card.setObjectName("card")
+        card = GlassCard("card")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(20, 18, 20, 14)
         layout.setSpacing(10)
 
         header = QHBoxLayout()
-        header.addWidget(_label("ตัวอย่างผลถอดความ", "fieldLabel"))
+        header.addWidget(_label("ผลถอดความ", "FieldLabel"))
         header.addStretch(1)
-        self._chip = _label("", "chip")
+        self._chip = _label("", "Chip")
         header.addWidget(self._chip)
         layout.addLayout(header)
 
@@ -274,9 +204,8 @@ class SubtitlePage(QWidget):
         layout.addWidget(self._table, 1)
 
         self._empty = _label(
-            "ยังไม่มีผลถอดความ เลือกไฟล์แล้วกด “ถอดเสียงด้วย AI” "
-            "ผลลัพธ์จะแสดงที่นี่เมื่อถอดเสียงเสร็จ",
-            "empty", wrap=True,
+            "ผลถอดความจะแสดงที่นี่",
+            "Empty", wrap=True,
         )
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._empty, 1)
@@ -302,9 +231,11 @@ class SubtitlePage(QWidget):
             size_text = ""
         self._file_name.setText(source.name)
         self._file_name.setToolTip(str(source))
+        self._file_meta.show()
         self._file_meta.setText(f"{kind} · {source.suffix.lstrip('.').upper() or 'ไม่ทราบชนิด'}")
         self._file_size.setText(size_text)
-        self._thumb.setText("▶" if kind == "วิดีโอ" else "♪")
+        self._thumb_icon = "film" if kind == "วิดีโอ" else "music"
+        self._refresh_thumb()
         self._submit_btn.setEnabled(True)
         self._set_status("")
 
@@ -335,20 +266,28 @@ class SubtitlePage(QWidget):
         """Hook for MainWindow: call when a SubtitleTask has finished. Lists task.cues and enables export."""
         self._preview_task = task
         self._cues = tuple(cue for cue in task.cues if cue.text.strip())
+        self._fill_table()
+        self._refresh_preview_state()
+        self._set_status("" if self._cues else "ไม่พบเสียงพูดในไฟล์นี้")
+
+    def _fill_table(self) -> None:
         mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         self._table.setRowCount(len(self._cues))
         for row, cue in enumerate(self._cues):
             number = QTableWidgetItem(str(row + 1))
-            number.setForeground(QColor("#6d6a66"))
+            number.setForeground(theme.color("text3"))
             number.setFont(mono)
             when = QTableWidgetItem(f"{format_srt_time(cue.start)} → {format_srt_time(cue.end)}")
-            when.setForeground(QColor("#ff9147"))
+            when.setForeground(theme.color("accent"))
             when.setFont(mono)
-            for column, item in enumerate((number, when, QTableWidgetItem(cue.text))):
+            text = QTableWidgetItem(cue.text)
+            text.setFont(QApplication.font())  # item views otherwise drop the Inter + Noto Sans Thai family list
+            for column, item in enumerate((number, when, text)):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row, column, item)
-        self._refresh_preview_state()
-        self._set_status("" if self._cues else "ไม่พบเสียงพูดในไฟล์นี้")
+
+    def _refresh_thumb(self) -> None:
+        self._thumb.setPixmap(theme.icon_pixmap(self._thumb_icon, theme.hex_color("purple"), 22, 1.7))
 
     def _refresh_preview_state(self) -> None:
         has_cues = bool(self._cues)
@@ -357,7 +296,7 @@ class SubtitlePage(QWidget):
         elif self._preview_task is not None:
             self._set_chip("0 ประโยค", on=False)
         else:
-            self._set_chip("รอผลถอดความ", on=False)
+            self._set_chip("", on=False)
         self._table.setVisible(has_cues)
         self._empty.setVisible(not has_cues)
         if self._preview_task is not None and not has_cues:
@@ -367,9 +306,9 @@ class SubtitlePage(QWidget):
 
     def _set_chip(self, text: str, on: bool) -> None:
         self._chip.setText(text)
+        self._chip.setVisible(bool(text))
         self._chip.setProperty("on", "true" if on else "false")
-        self._chip.style().unpolish(self._chip)
-        self._chip.style().polish(self._chip)
+        repolish(self._chip)
 
     def _suggest_path(self, suffix: str) -> str:
         if self._preview_task is not None:
@@ -390,9 +329,12 @@ class SubtitlePage(QWidget):
         try:
             saved = write_subtitles(self._cues, chosen)
         except ClipHubError as exc:
-            QMessageBox.warning(self, "ส่งออกไม่สำเร็จ", str(exc))
+            if not overlays.notify("error", "ส่งออกไม่สำเร็จ", str(exc)):
+                QMessageBox.warning(self, "ส่งออกไม่สำเร็จ", str(exc))
             return
-        self._set_status(f"บันทึกไฟล์แล้ว: {saved}")
+        if not overlays.notify("success", f"บันทึก {saved.name} แล้ว", "",
+                               [("แสดงในโฟลเดอร์", lambda: overlays.reveal_in_folder(saved))]):
+            self._set_status(f"บันทึกไฟล์แล้ว: {saved}")
 
     def _set_status(self, text: str) -> None:
         self._status.setText(text)

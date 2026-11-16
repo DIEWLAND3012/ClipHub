@@ -14,7 +14,7 @@ binaries = [(str(path), "bin") for path in ffmpeg_tools if path.is_file()]
 
 # Unverified: not yet run on real Windows/macOS runners. yt-dlp loads extractors dynamically; the AI stack
 # ships native libraries and a VAD model file. Trim a package if the first CI build shows it is unnecessary.
-datas = []
+datas = [(str(ROOT / "assets" / "fonts"), "assets/fonts")]  # Inter + Noto Sans Thai (OFL)
 hiddenimports = collect_submodules("yt_dlp")
 for package in ("faster_whisper", "ctranslate2", "onnxruntime", "av"):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
