@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import sys
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
+from ui import i18n
 from ui.main_window import MainWindow
 from ui.splash import boot
 from ui.theme import apply_theme
@@ -13,6 +15,9 @@ from ui.theme import apply_theme
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("ClipHUB")
+    # Every on-screen text goes through ui.i18n; the saved language applies from the first window.
+    i18n.install()
+    i18n.set_language(str(QSettings("ClipHUB", "ClipHUB").value("ui/language", "th")))
     apply_theme(app)
     # The boot screen preloads yt-dlp and Whisper and tests the GPUs, then fades into the window.
     boot(app, lambda report: MainWindow(hardware=report))

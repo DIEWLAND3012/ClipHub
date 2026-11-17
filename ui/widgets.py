@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui import theme
+from ui import i18n, theme
 
 
 class Backdrop(QWidget):
@@ -514,13 +514,18 @@ class ElidedLabel(QLabel):
         super().__init__(parent)
         self._mode = mode
         self._full = ""
+        self._source = ""
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.set_full_text(text)
 
     def set_full_text(self, text: str) -> None:
-        self._full = text
+        self._source = text  # the Thai source, kept for live language switches
+        self._full = i18n.tr(text)
         self.setToolTip(text)
         self._elide()
+
+    def retranslate(self) -> None:
+        self.set_full_text(self._source)
 
     def full_text(self) -> str:
         return self._full
@@ -531,7 +536,11 @@ class ElidedLabel(QLabel):
 
     def _elide(self) -> None:
         width = max(self.width() - 2, 10)
-        super().setText(self.fontMetrics().elidedText(self._full, self._mode, width))
+        elided = self.fontMetrics().elidedText(self._full, self._mode, width)
+        if i18n.installed():
+            i18n.raw_label_text(self, elided)  # display text only: not a new source to translate
+        else:
+            super().setText(elided)
 
 
 def pop_in(widget: QWidget, delay: int = 0, rise: int = 18, duration: int = 420) -> None:

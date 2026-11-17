@@ -170,6 +170,7 @@ class SubtitlePage(QWidget):
         for code, text in LANGUAGES:
             self._lang_buttons[code] = seg.add(text)
         self._lang_buttons["th"].setChecked(True)
+        self._lang_group.buttonToggled.connect(lambda _b, on: on and self._refresh_summary())
         grid.addWidget(seg)
         grid.addSpacing(6)
         grid.addWidget(_label("โมเดล AI", "FieldLabel"))
@@ -178,6 +179,7 @@ class SubtitlePage(QWidget):
         for size, note in MODELS:
             self._model_combo.addItem(f"{size} · {note}", size)
         self._model_combo.setCurrentIndex(self._model_combo.findData(DEFAULT_MODEL))
+        self._model_combo.currentIndexChanged.connect(lambda _i: self._refresh_summary())
         grid.addWidget(self._model_combo)
         self._model_combo.setToolTip("ครั้งแรกที่ใช้โมเดลแต่ละขนาด จะดาวน์โหลดโมเดลจากอินเทอร์เน็ต")
         return card
@@ -244,7 +246,12 @@ class SubtitlePage(QWidget):
             pop_in(self.file_card)
             pop_in(self.options_card, delay=110)
             pop_in(self.preview_card, delay=220)
-        self.action_bar.set_summary(f"{source.name} · ภาษา{dict(LANGUAGES)[self.selected_language()]}")
+        self._refresh_summary()
+
+    def _refresh_summary(self) -> None:
+        """Language and model only: file names can be very long."""
+        if self._input_path:
+            self.action_bar.set_summary(f"ภาษา{dict(LANGUAGES)[self.selected_language()]} · {self.selected_model()}")
 
     def selected_language(self) -> str:
         return next(code for code, button in self._lang_buttons.items() if button.isChecked())

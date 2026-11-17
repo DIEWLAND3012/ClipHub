@@ -89,11 +89,11 @@ class Sidebar(GlassCard):
         badge_row.addWidget(self.queue_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.queue_button)
 
-        self.perf_button = QPushButton("ประสิทธิภาพ")
+        self.perf_button = QPushButton("การตั้งค่า")
         self.perf_button.setProperty("nav", True)
         self.perf_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.perf_button.setToolTip("CPU / GPU ที่ใช้ประมวลผล")
-        bind_icon(self.perf_button, "chip", "text2", 19)
+        self.perf_button.setToolTip("การตั้งค่า")
+        bind_icon(self.perf_button, "gear", "text2", 19)
         self.perf_button.clicked.connect(self.performance_clicked)
         layout.addWidget(self.perf_button)
         layout.addSpacing(6)
@@ -183,7 +183,7 @@ class Sidebar(GlassCard):
         self.appearance.setVisible(not compact)
         self.cycle_button.setVisible(compact)
         for button, text in zip(self.buttons + [self.cycle_button, self.queue_button, self.perf_button],
-                                self._labels + ["", "คิวงาน", "ประสิทธิภาพ"]):
+                                self._labels + ["", "คิวงาน", "การตั้งค่า"]):
             button.setText("" if compact else text)
             button.setProperty("compact", compact)
             repolish(button)

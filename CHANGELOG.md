@@ -4,6 +4,11 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Settings and language
+- "ประสิทธิภาพ" is now "การตั้งค่า" (Settings) with a gear icon; same GPU options plus a TH | EN sliding switch.
+- The whole app switches between Thai and English live (pages, queue, progress, notifications, tooltips); the choice is remembered. Translation lives in ui/i18n.py.
+- Action-bar summaries no longer include file names, which could be very long.
+
 ### Start-up and sizing
 - Boot screen like a Mac starting up (black, the ClipHUB mark, a thin progress bar) that does real work while it shows: loads yt-dlp and Whisper and tests the GPUs, then cross-fades into the window. Plays assets/sounds/startup.wav when present (kept out of git).
 - The window opens at about two thirds of the screen, centred, instead of a fixed large size.

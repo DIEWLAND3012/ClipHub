@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 from core import hwaccel
 from core.task_queue import TaskQueue
 from tasks.subtitle import SubtitleTask
-from ui import theme
+from ui import i18n, theme
 from ui.overlays import ProgressPill, ToastHost, reveal_in_folder, set_host
 from ui.pages import PAGES
 from ui.pages.subtitle_page import SubtitlePage
@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         self.perf.close_requested.connect(lambda: self.set_perf_open(False))
         self.perf.settings_changed.connect(self._configure_queue)
         self.perf.size_changed.connect(self._resize_perf_popup)
+        self.perf.language_changed.connect(self._on_language)
         self.toasts = ToastHost(central)
         set_host(self.toasts)
         self.pill = ProgressPill(
@@ -302,6 +303,29 @@ class MainWindow(QMainWindow):
             self.perf.hide()
             if not self.rail.isVisible():
                 self.scrim.hide()
+
+    def _on_language(self, lang: str) -> None:
+        """Cross-fade like the theme switch, then every text in the app changes language."""
+        central = self.centralWidget()
+        snapshot = QLabel(central)
+        snapshot.setPixmap(central.grab())
+        snapshot.setGeometry(central.rect())
+        snapshot.show()
+        snapshot.raise_()
+        i18n.set_language(lang)
+        for page in self.pages:  # summaries rebuilt from current choices
+            refresh = getattr(page, "_refresh", None)
+            if callable(refresh):
+                refresh()
+        effect = QGraphicsOpacityEffect(snapshot)
+        snapshot.setGraphicsEffect(effect)
+        fade = QPropertyAnimation(effect, b"opacity", snapshot)
+        fade.setDuration(300)
+        fade.setStartValue(1.0)
+        fade.setEndValue(0.0)
+        fade.finished.connect(snapshot.deleteLater)
+        fade.start()
+        QTimer.singleShot(0, self._resize_perf_popup)
 
     def _resize_perf_popup(self) -> None:
         """Glide the open performance popup to the height its content needs (bottom stays put)."""

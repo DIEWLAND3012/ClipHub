@@ -608,7 +608,7 @@ class ConverterPage(QWidget):
         sidecar = self._sidecar_format()
         self.action_bar.set_summary(
             f"{describe_conversion(Path(self._input_path).suffix, ext, sidecar)} · "
-            f"{describe_settings(ext, self.settings())} → {self._output_path().name}")
+            f"{describe_settings(ext, self.settings())}")  # no file name: they can be long
 
     def _output_path(self) -> Path:
         """Where the result goes: the (edited) name beside the source, numbered if it is taken."""
@@ -754,5 +754,5 @@ class ConverterPage(QWidget):
         if task is None:
             return
         self.task_submitted.emit(task)
-        self.action_bar.flash(f"เพิ่มเข้าคิวแล้ว ✓ {Path(task.output_path).name}")
+        self.action_bar.flash("เพิ่มเข้าคิวแล้ว ✓")
         self._refresh()  # the preview moves on to the next free name

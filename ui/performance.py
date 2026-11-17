@@ -1,4 +1,4 @@
-"""Performance panel: one switch to use the graphics card, and which card when there are several.
+"""Settings panel: the graphics card switch (and which card when there are several) and the app language.
 
 Jobs always run in parallel where the hardware allows; there is nothing else to set.
 """
@@ -10,8 +10,8 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QListView, QPushButton, QV
 
 from core import hwaccel
 from core.hwaccel import Engine, HardwareReport
-from ui import theme
-from ui.widgets import GlassCard, fade_in, label
+from ui import i18n, theme
+from ui.widgets import GlassCard, Segmented, fade_in, label
 
 ALL_GPUS = "all"
 
@@ -32,6 +32,7 @@ class HardwareProbe(QThread):
 class PerformancePanel(GlassCard):
     settings_changed = Signal()
     close_requested = Signal()
+    language_changed = Signal(str)
     size_changed = Signal()  # the popup must grow / shrink to fit
 
     WIDTH = 360
@@ -47,7 +48,7 @@ class PerformancePanel(GlassCard):
         layout.setSpacing(12)
 
         head = QHBoxLayout()
-        head.addWidget(label("ประสิทธิภาพ", "RailTitle"))
+        head.addWidget(label("การตั้งค่า", "RailTitle"))
         head.addStretch(1)
         close = QPushButton()
         close.setObjectName("JobCancel")
@@ -63,7 +64,7 @@ class PerformancePanel(GlassCard):
         texts = QVBoxLayout()
         texts.setSpacing(1)
         texts.addWidget(label("ใช้การ์ดจอช่วยประมวลผล", "ToggleTitle"))
-        texts.addWidget(label("แปลงและบีบอัดวิดีโอเร็วขึ้น ใช้ CPU น้อยลง", "Note"))
+        texts.addWidget(label("แปลงและบีบอัดวิดีโอเร็วขึ้น ใช้ CPU น้อยลง", "Note", wrap=True))
         from ui.pages.converter_page import SwitchCheckBox  # the Apple-style toggle
         self.gpu_switch = SwitchCheckBox("ใช้การ์ดจอช่วยประมวลผล")
         self.gpu_switch.setChecked(self._settings.value("perf/use_gpu", True, type=bool))
@@ -86,6 +87,24 @@ class PerformancePanel(GlassCard):
         box.addWidget(self.note)
         layout.addWidget(self.gpu_box)
         self.gpu_box.setVisible(self.gpu_switch.isChecked())
+
+        # Language: a two-way sliding switch, TH | EN.
+        layout.addSpacing(4)
+        lang_row = QHBoxLayout()
+        lang_texts = QVBoxLayout()
+        lang_texts.setSpacing(1)
+        lang_texts.addWidget(label("ภาษาแอป", "ToggleTitle"))
+        lang_texts.addWidget(label("ไทย / English", "Note"))
+        self.lang_seg = Segmented()
+        self.lang_seg.setFixedSize(124, 36)
+        for index, code in enumerate(i18n.LANGUAGES):
+            self.lang_seg.add(code.upper(), index)
+        current = i18n.language()
+        self.lang_seg.group.button(i18n.LANGUAGES.index(current)).setChecked(True)
+        self.lang_seg.group.idToggled.connect(lambda i, on: on and self._choose_language(i18n.LANGUAGES[i]))
+        lang_row.addLayout(lang_texts, 1)
+        lang_row.addWidget(self.lang_seg, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addLayout(lang_row)
         self.set_report(self._report)
         self.hide()
 
@@ -102,6 +121,10 @@ class PerformancePanel(GlassCard):
         if choice in (None, ALL_GPUS):
             return gpus
         return [e for e in gpus if e.key == choice] or gpus
+
+    def _choose_language(self, lang: str) -> None:
+        self._settings.setValue("ui/language", lang)
+        self.language_changed.emit(lang)
 
     def _on_switch(self, on: bool) -> None:
         self.gpu_box.setVisible(on)

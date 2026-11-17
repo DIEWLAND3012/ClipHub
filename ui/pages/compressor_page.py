@@ -339,7 +339,7 @@ class CompressorPage(QWidget):
             return
         mode = self._mode()
         label_text = f"{self._custom_kbps()} kbps" if mode == CUSTOM_MODE else PRESET_LABELS[mode]
-        self.action_bar.set_summary(f"≈ {format_size(self._estimate)} · {label_text} → {self._output_path().name}")
+        self.action_bar.set_summary(f"≈ {format_size(self._estimate)} · {label_text}")  # no file name: they can be long
 
     def _set_saving(self, state: str, big: str, title: str) -> None:
         _set_prop(self.saving, "state", state)
@@ -428,6 +428,6 @@ class CompressorPage(QWidget):
             target_kbps=self._custom_kbps() if mode == CUSTOM_MODE else None,
         )
         self.task_submitted.emit(task)
-        self.action_bar.flash(f"เพิ่มเข้าคิวแล้ว ✓ {output.name}")
+        self.action_bar.flash("เพิ่มเข้าคิวแล้ว ✓")
         self.name_field.edited = False
         self.name_field.set_default(suggest_output_path(self._path, self._reserved).stem)
