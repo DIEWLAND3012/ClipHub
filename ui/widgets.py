@@ -355,8 +355,8 @@ class Segmented(QFrame):
         self._row.setSpacing(2)
         self._thumb = QRectF()
         self._anim = QVariantAnimation(self)
-        self._anim.setDuration(240)
-        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._anim.setDuration(380)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutQuint)  # fast start, long gentle settle
         self._anim.valueChanged.connect(self._set_thumb)
         self.group.buttonToggled.connect(self._on_toggled)
 

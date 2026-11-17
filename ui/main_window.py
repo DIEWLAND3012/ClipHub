@@ -263,7 +263,11 @@ class MainWindow(QMainWindow):
         return QRect(x, self._central.height() - height - 10, width, height)
 
     def _perf_height(self) -> int:
-        return min(self.perf.sizeHint().height(), self._central.height() - 20)
+        # Wrapped text (longer in English) needs its height measured at the popup's real width.
+        layout = self.perf.layout()
+        layout.activate()
+        needed = layout.totalHeightForWidth(PerformancePanel.WIDTH) if layout.hasHeightForWidth()             else self.perf.sizeHint().height()
+        return min(max(needed, self.perf.sizeHint().height()), self._central.height() - 20)
 
     def _open_popup(self, panel: QWidget, rect: QRect) -> None:
         self.scrim.setGeometry(self._central.rect())
@@ -320,9 +324,10 @@ class MainWindow(QMainWindow):
         effect = QGraphicsOpacityEffect(snapshot)
         snapshot.setGraphicsEffect(effect)
         fade = QPropertyAnimation(effect, b"opacity", snapshot)
-        fade.setDuration(300)
+        fade.setDuration(520)
         fade.setStartValue(1.0)
         fade.setEndValue(0.0)
+        fade.setEasingCurve(QEasingCurve.Type.InOutCubic)  # a slow, soft dissolve between languages
         fade.finished.connect(snapshot.deleteLater)
         fade.start()
         QTimer.singleShot(0, self._resize_perf_popup)
