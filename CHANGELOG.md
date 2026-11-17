@@ -4,6 +4,14 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### FastCut (new tool)
+- A fifth tool, between Compress and Subtitles: cut part of a video or a song. The preview plays with a playhead; the timeline shows the sound as bars under a gradient box, picked the way Instagram picks a music clip: drag the box, stretch either edge, or type the length (default 20 s). Space plays the chosen part on a loop.
+- Fast (stream copy, seconds, may start on the keyframe just before) or Accurate (re-encodes the video on the GPU when there is one). Audio is always cut fast and exactly.
+- Choose the folder and the file name, then Export.
+
+### Boot screen
+- "© 2026 DIEWLAND STUDIO" at the bottom.
+
 ### Compress any file
 - The Compress page now takes any file. Videos work as before; images (JPG/PNG/WebP/BMP/TIFF/GIF) are re-encoded and large ones scaled down, PDFs and Office documents (DOCX/XLSX/PPTX/ODT/EPUB) get their pictures shrunk and are repacked, audio gets a lower bitrate (WAV/FLAC become FLAC or MP3), and anything else is packed into a lossless .zip.
 - High / Balanced / Small apply to every kind; the file card shows details for each kind (dimensions, pages, pictures inside, duration).

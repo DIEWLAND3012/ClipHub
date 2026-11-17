@@ -94,7 +94,22 @@ EN: dict[str, str] = {
     "คุณภาพมาตรฐาน": "Standard quality", "คุณภาพสูง": "High quality", "สมดุล": "Balanced", "ไฟล์เล็ก": "Small file",
     # compressor
     "ลากไฟล์วิดีโอมาวางที่นี่": "Drop a video file here",
-    "ลากไฟล์มาวางที่นี่": "Drop a file here", "เลือกไฟล์": "Choose a file", "ทุกไฟล์ (*)": "All files (*)",
+    "ลากไฟล์มาวางที่นี่": "Drop a file here",
+    "ลากไฟล์วิดีโอหรือเสียงมาวางที่นี่": "Drop a video or audio file here",
+    "เลือกไฟล์วิดีโอหรือเสียง": "Choose a video or audio file", "ความยาวที่ตัด": "Clip length",
+    "วินาที": "seconds", "วิธีตัด": "How to cut", "เร็ว": "Fast",
+    "บันทึกที่": "Save to", "เลือก…": "Choose…", "เลือกโฟลเดอร์ปลายทาง": "Choose a destination folder",
+    "เล่นช่วงที่เลือก (Space)": "Play the selection (Space)", "กำลังอ่านไฟล์…": "Reading the file…",
+    "ไฟล์เสียงตัดได้ตรงจุดและเร็วเสมอ": "Audio is always cut fast and exactly",
+    "เริ่มตรงเฟรมที่เลือก · เข้ารหัสภาพใหม่ ใช้เวลานานขึ้น": "Starts on the exact frame · re-encodes, takes longer",
+    "เสร็จในไม่กี่วินาที ไม่เข้ารหัสใหม่ · จุดเริ่มอาจเร็วกว่าที่เลือกเล็กน้อย":
+        "Done in seconds, no re-encoding · may start slightly early",
+    "ไฟล์นี้ไม่มีภาพหรือเสียงให้ตัด": "This file has no picture or sound to cut",
+    "ช่วงที่ตัดต้องยาวอย่างน้อย 0.5 วินาที": "The clip must be at least 0.5 seconds long",
+    "กำลังตัด": "Cutting", "วิดีโอและเสียง (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.flv *.wmv *.ts *.mts *.3gp *.mpg "
+    "*.mp3 *.m4a *.aac *.wav *.flac *.ogg *.opus *.wma *.aif *.aiff);;ทุกไฟล์ (*)":
+        "Video and audio (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.flv *.wmv *.ts *.mts *.3gp *.mpg "
+        "*.mp3 *.m4a *.aac *.wav *.flac *.ogg *.opus *.wma *.aif *.aiff);;All files (*)", "ทุกไฟล์ (*)": "All files (*)",
     "วิดีโอ": "Video", "รูปภาพ": "Image", "เอกสาร Office": "Office document", "เสียง": "Audio",
     "ไฟล์ทั่วไป": "File", "ประเภท": "Type", "รูปแบบ": "Format", "วิธีบีบอัด": "Method",
     "ขนาดภาพ": "Dimensions", "จำนวนหน้า": "Pages", "รูปภาพในเอกสาร": "Pictures inside",
@@ -225,6 +240,8 @@ PATTERNS: list[Pattern] = [
     _p(r"^ไม่รู้จักโค้ดเดกเสียง: (.+)$", lambda a: f"Unknown audio codec: {a}"),
     _p(r"^ไม่รู้จักโหมดการบีบอัด: (.+)$", lambda a: f"Unknown compression mode: {a}"),
     _p(r"^(\d+) หน้า$", lambda a: f"{a} page" if a == "1" else f"{a} pages"),
+    _p(r"^([\d.]+) วินาที$", lambda a: f"{a} s"),
+    _p(r"^กำลังตัด · GPU ใช้ไม่ได้ ใช้ CPU แทน$", lambda: "Cutting · GPU unavailable, using the CPU"),
     _p(r"^(\d+) รูป$", lambda a: f"{a} picture" if a == "1" else f"{a} pictures"),
     _p(r"^บีบอัดไฟล์นี้ไม่ได้: (.+)$", lambda a: f"Couldn't compress this file: {a}"),
     _p(r"^(.+): ต้องอัปเดตไดรเวอร์ NVIDIA เป็นเวอร์ชัน (.+) ขึ้นไป จึงจะใช้เร่งความเร็วได้$",

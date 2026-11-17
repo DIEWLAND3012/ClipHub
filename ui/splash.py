@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QWidget
 from core import ffmpeg_setup, hwaccel
 from ui.app_icon import app_icon, icon_pixmap
 
+CREDIT = "© 2026 DIEWLAND STUDIO"
 MIN_SECONDS = 3.2  # long enough to feel like a boot, short enough not to wait
 
 
@@ -177,6 +178,12 @@ class BootSplash(QWidget):
             fill.addRoundedRect(QRectF(bar.left(), bar.top(), max(bar_h, bar_w * self._value), bar_h),
                                 bar_h / 2, bar_h / 2)
             painter.fillPath(fill, QColor("#ffffff"))
+
+        credit = QFont(self.font())  # studio credit, same in Thai and English
+        credit.setPixelSize(12)
+        painter.setFont(credit)
+        painter.setPen(QColor(255, 255, 255, 110))
+        painter.drawText(QRectF(0, h - 52, w, 20), Qt.AlignmentFlag.AlignCenter, CREDIT)
 
         if self._status:
             small = QFont(self.font())

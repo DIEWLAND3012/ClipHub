@@ -147,7 +147,7 @@ class MainWindow(QMainWindow):
         self.sidebar.performance_clicked.connect(lambda: self.set_perf_open(not self.perf.isVisible()))
         self.sidebar.select(0)
         self._on_page_changed(0)
-        for index in range(len(self.nav_buttons)):  # Ctrl/Cmd+1..4 jumps between tools
+        for index in range(len(self.nav_buttons)):  # Ctrl/Cmd+1..5 jumps between tools
             shortcut = QShortcut(QKeySequence(f"Ctrl+{index + 1}"), self)
             shortcut.activated.connect(lambda i=index: self.nav_buttons[i].click())
         QShortcut(QKeySequence("Ctrl+J"), self, activated=lambda: self.set_queue_open(not self.rail.isVisible()))
@@ -387,7 +387,8 @@ class MainWindow(QMainWindow):
             actions = [("แสดงในโฟลเดอร์", lambda: reveal_in_folder(str(output)))]
         else:  # subtitles are previewed first, then exported from the subtitle page
             body = f"{len(getattr(task, 'cues', ()))} ประโยค · พร้อมส่งออก"
-            actions = [("ดูผลถอดความ", lambda: self.nav_buttons[3].click())]
+            subtitles = next(i for i, page in enumerate(self.pages) if isinstance(page, SubtitlePage))
+            actions = [("ดูผลถอดความ", lambda: self.nav_buttons[subtitles].click())]
         self.toasts.show("success", f"{name} เสร็จแล้ว", body, actions)
 
     def _toast_failed(self, task: object, message: str) -> None:

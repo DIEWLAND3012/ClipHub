@@ -94,6 +94,7 @@ LIGHT: dict[str, object] = {
     "orange": rgba("#ff9500"),
     "pink": rgba("#ff2d55"),
     "purple": rgba("#af52de"),
+    "teal": rgba("#30b0c7"),
     "switch_on": rgba("#34c759"),
     "knob": rgba("#ffffff"),
 }
@@ -149,11 +150,13 @@ DARK: dict[str, object] = {
     "orange": rgba("#ff9f0a"),
     "pink": rgba("#ff375f"),
     "purple": rgba("#bf5af2"),
+    "teal": rgba("#40c8e0"),
     "switch_on": rgba("#30d158"),
     "knob": rgba("#ffffff"),
 }
 
-KIND_COLOR = {"download": "blue", "convert": "orange", "compress": "pink", "subtitle": "purple"}
+KIND_COLOR = {"download": "blue", "convert": "orange", "compress": "pink", "fastcut": "teal",
+              "subtitle": "purple"}
 
 _current: dict[str, object] = LIGHT
 
@@ -309,6 +312,13 @@ QLineEdit#NameEdit { background: transparent; border: none; padding: 0; min-heig
 QLineEdit#NameEdit:hover, QLineEdit#NameEdit:focus { background: transparent; border: none; }
 QLineEdit#KbpsEdit { background: transparent; border: none; padding: 0; min-height: 0; }
 QLabel#Unit { color: $text3; font-size: 13px; }
+QLabel#TimeLabel { color: $text2; font-family: $mono; font-size: 13px; }
+QPushButton#PlayButton { border: none; border-radius: 20px; padding: 0; min-height: 0;
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #fccc2e, stop:0.4 #f7772d, stop:0.7 #e8336b, stop:1 #9b35f5); }
+QPushButton#PlayButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #fdd85a, stop:0.4 #f98c4b, stop:0.7 #ee5583, stop:1 #ab55f7); }
+QPushButton#StepButton { border: none; border-radius: 10px; padding: 0; min-height: 0; background: $inner;
+  font-size: 18px; font-weight: 600; color: $text; }
+QPushButton#StepButton:hover { background: $accent_soft; color: $accent; }
 QLabel#BarLabel { color: $text2; font-size: 13px; }
 QLabel#BarAmount { font-size: 13px; }
 QLabel#BarAmount[accent="true"] { color: $accent; font-weight: 600; }
@@ -455,6 +465,10 @@ _ICONS = {
     "chevron": '<path d="m6 9 6 6 6-6"/>',
     "check": '<path d="M20 6 9 17l-5-5"/>',
     "play": '<path d="M8 5l12 7-12 7z" fill="currentColor" stroke="none"/>',
+    "pause": '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>'
+             '<rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
+    "fastcut": '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>'
+               '<path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/>',
     "upload": '<path d="M12 15V3m0 0 4 4m-4-4-4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
     "film": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z" fill="currentColor" stroke="none"/>',
     "music": '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
