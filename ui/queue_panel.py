@@ -17,7 +17,7 @@ from core.base_task import BaseMediaTask
 from core.task_queue import TaskQueue
 from ui import theme
 from ui.theme import repolish
-from ui.widgets import ElidedLabel, label
+from ui.widgets import ElidedLabel, animate_value, fade_in, label
 
 STATUS_TEXT = {
     "pending": "รอในคิว",
@@ -114,7 +114,7 @@ class JobCard(QFrame):
         self.icon_label.setProperty("state", state)
         self.cancel_button.setVisible(state not in FINISHED_STATES)
         if state == "done":
-            self.progress.setValue(100)
+            animate_value(self.progress, 100, 200)  # also stops an unfinished glide
             self.percent_label.setText("100%")
         self._refresh_icons()
         for widget in (self, self.icon_label, self.progress):
@@ -123,7 +123,7 @@ class JobCard(QFrame):
     def set_progress(self, percent: int, message: str = "") -> None:
         if self.is_finished() or self.cancelling:
             return
-        self.progress.setValue(percent)
+        animate_value(self.progress, percent)
         self.percent_label.setText(f"{percent}%")
         self.set_state("running", message)
 
@@ -156,6 +156,13 @@ class QueuePanel(QWidget):
         head.addWidget(self.count_badge)
         head.addStretch(1)
         head.addWidget(self.clear_button)
+        self.close_button = QPushButton()  # shown when the queue is a drawer
+        self.close_button.setObjectName("JobCancel")
+        self.close_button.setFixedSize(26, 26)
+        self.close_button.setToolTip("ปิด (Esc)")
+        self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_button.hide()
+        head.addWidget(self.close_button)
 
         self.empty_label = label("ยังไม่มีงาน", "RailEmpty")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -190,6 +197,7 @@ class QueuePanel(QWidget):
 
     def _refresh_icons(self) -> None:
         self.queue_icon.setPixmap(theme.icon_pixmap("queue", theme.hex_color("accent"), 17, 2.0))
+        self.close_button.setIcon(theme.themed_icon("close", "text2", 12, 2.2))
 
     def unfinished_tasks(self) -> list[BaseMediaTask]:
         return [task for task, card in self._cards.items() if not card.is_finished()]
@@ -216,6 +224,7 @@ class QueuePanel(QWidget):
         card.cancel_button.clicked.connect(lambda: self.cancel(task))
         self._cards[task] = card
         self._move_to_top(card)  # newest first
+        fade_in(card, 320)
         self._update_count()
 
     def _move_to_top(self, card: JobCard) -> None:
@@ -235,6 +244,9 @@ class QueuePanel(QWidget):
         card = self._cards.get(task)
         if card is not None:
             card.set_state("running")
+            engine = getattr(task, "engine", None)
+            if engine is not None:  # show where the video is encoded: NVIDIA / Intel GPU / CPU
+                card.summary_label.set_full_text(f"{task.summary()} · {engine.short}")
             self._move_to_top(card)  # the job being worked on is always on top
 
     def _on_progress(self, task: BaseMediaTask, percent: int, message: str) -> None:

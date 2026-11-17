@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -27,7 +26,7 @@ from core.errors import ClipHubError
 from tasks.subtitle import Cue, SubtitleTask, format_srt_time, write_subtitles
 from ui import overlays, theme
 from ui.theme import repolish
-from ui.widgets import GlassCard, Segmented, page_header, primary_button
+from ui.widgets import ActionBar, Columns, DropZone, GlassCard, PageDrop, Segmented, page_header, pop_in, primary_button
 
 AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"}
 VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
@@ -84,13 +83,30 @@ class SubtitlePage(QWidget):
         root.setSpacing(16)
 
         root.addLayout(page_header("ซับไตเติล"))
+        self.dropzone = DropZone("ลากไฟล์เสียงหรือวิดีโอมาวางที่นี่", MEDIA_FILTER, "เลือกไฟล์เสียงหรือวิดีโอ")
+        self.dropzone.setMinimumHeight(300)
+        self.dropzone.file_chosen.connect(self.set_input_file)
+        self.dropzone.rejected.connect(self._set_notice)
+        root.addWidget(self.dropzone)
+        PageDrop(self, self.set_input_file, self._set_notice)
+        self._notice = _label("", "ErrorText", wrap=True)
+        self._notice.hide()
+        root.addWidget(self._notice)
 
-        root.addWidget(self._build_file_card())
-        root.addWidget(self._build_options_card())
-        root.addWidget(self._build_preview_card(), 1)
+        # The file and settings on the left, the transcript filling the right.
+        self.columns = Columns(breakpoint=820, stretch=(4, 6))
+        self.file_card = self._build_file_card()
+        self.options_card = self._build_options_card()
+        self.preview_card = self._build_preview_card()
+        for widget in (self.file_card, self.options_card, self.preview_card):
+            widget.hide()
+        self.columns.left.addWidget(self.file_card)
+        self.columns.left.addWidget(self.options_card)
+        self.columns.left.addStretch(1)
+        self.columns.right.addWidget(self.preview_card, 1)
+        root.addWidget(self.columns, 1)
 
-        actions = QHBoxLayout()
-        actions.setSpacing(12)
+        self.action_bar = ActionBar()
         self._submit_btn = primary_button("ถอดเสียงด้วย AI", "sparkles")
         self._submit_btn.setEnabled(False)
         self._submit_btn.clicked.connect(self._submit)
@@ -100,15 +116,9 @@ class SubtitlePage(QWidget):
             button.setObjectName("FieldButton")
             button.setEnabled(False)
             button.clicked.connect(lambda _checked=False, s=suffix: self._export(s))
-        for button in (self._submit_btn, self._export_srt_btn, self._export_vtt_btn):
+        for button in (self._export_srt_btn, self._export_vtt_btn, self._submit_btn):  # main action last
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            actions.addWidget(button)
-        actions.addStretch(1)
-        root.addLayout(actions)
-
-        self._status = _label("", "Status", wrap=True)
-        root.addWidget(self._status)
-        self._set_status("")
+            self.action_bar.add_button(button)
         self._refresh_preview_state()
 
     def _build_file_card(self) -> QFrame:
@@ -134,9 +144,9 @@ class SubtitlePage(QWidget):
         meta.addWidget(self._file_meta)
         self._file_meta.hide()  # shown once a file is chosen
         self._file_size = _label("", "FileSize")
-        pick = QPushButton("เลือกไฟล์")
+        pick = QPushButton("เปลี่ยนไฟล์")
         pick.setCursor(Qt.CursorShape.PointingHandCursor)
-        pick.clicked.connect(self._choose_file)
+        pick.clicked.connect(lambda: self.dropzone.browse())
 
         layout.addWidget(self._thumb)
         layout.addLayout(meta, 1)
@@ -147,15 +157,10 @@ class SubtitlePage(QWidget):
 
     def _build_options_card(self) -> QFrame:
         card = GlassCard("card")
-        grid = QGridLayout(card)
-        grid.setContentsMargins(20, 18, 20, 18)
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(9)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-
-        grid.addWidget(_label("ภาษา", "FieldLabel"), 0, 0)
-        grid.addWidget(_label("โมเดล AI", "FieldLabel"), 0, 1)
+        grid = QVBoxLayout(card)
+        grid.setContentsMargins(20, 18, 20, 20)
+        grid.setSpacing(9)
+        grid.addWidget(_label("ภาษา", "FieldLabel"))
 
         seg = Segmented()
         seg.setFixedHeight(theme.CONTROL_HEIGHT)
@@ -164,13 +169,15 @@ class SubtitlePage(QWidget):
         for code, text in LANGUAGES:
             self._lang_buttons[code] = seg.add(text)
         self._lang_buttons["th"].setChecked(True)
-        grid.addWidget(seg, 1, 0)
+        grid.addWidget(seg)
+        grid.addSpacing(6)
+        grid.addWidget(_label("โมเดล AI", "FieldLabel"))
 
         self._model_combo = QComboBox()
         for size, note in MODELS:
             self._model_combo.addItem(f"{size} · {note}", size)
         self._model_combo.setCurrentIndex(self._model_combo.findData(DEFAULT_MODEL))
-        grid.addWidget(self._model_combo, 1, 1)
+        grid.addWidget(self._model_combo)
         self._model_combo.setToolTip("ครั้งแรกที่ใช้โมเดลแต่ละขนาด จะดาวน์โหลดโมเดลจากอินเทอร์เน็ต")
         return card
 
@@ -213,13 +220,6 @@ class SubtitlePage(QWidget):
 
     # ---- file selection and submit --------------------------------------
 
-    def _choose_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "เลือกไฟล์เสียงหรือวิดีโอ", self._last_dir, MEDIA_FILTER
-        )
-        if path:
-            self.set_input_file(path)
-
     def set_input_file(self, path: str) -> None:
         source = Path(path)
         self._input_path = str(source)
@@ -237,7 +237,13 @@ class SubtitlePage(QWidget):
         self._thumb_icon = "film" if kind == "วิดีโอ" else "music"
         self._refresh_thumb()
         self._submit_btn.setEnabled(True)
-        self._set_status("")
+        self._set_notice("")
+        self.dropzone.hide()
+        if self.file_card.isHidden():  # first file: the cards rise in one after another
+            pop_in(self.file_card)
+            pop_in(self.options_card, delay=110)
+            pop_in(self.preview_card, delay=220)
+        self.action_bar.set_summary(f"{source.name} · ภาษา{dict(LANGUAGES)[self.selected_language()]}")
 
     def selected_language(self) -> str:
         return next(code for code, button in self._lang_buttons.items() if button.isChecked())
@@ -257,7 +263,7 @@ class SubtitlePage(QWidget):
             write_file=False,  # the preview is shown first; the user exports from here
         )
         self._task = task
-        self._set_status("เพิ่มงานถอดเสียงลงคิวแล้ว ตัวอย่างผลถอดความจะแสดงเมื่อเสร็จ")
+        self.action_bar.flash("เพิ่มเข้าคิวแล้ว ✓ ผลถอดความจะขึ้นทางขวาเมื่อเสร็จ", 5000)
         self.task_submitted.emit(task)
 
     # ---- preview and export ---------------------------------------------
@@ -337,6 +343,10 @@ class SubtitlePage(QWidget):
             self._set_status(f"บันทึกไฟล์แล้ว: {saved}")
 
     def _set_status(self, text: str) -> None:
-        self._status.setText(text)
-        self._status.setVisible(bool(text))
+        if text:
+            self.action_bar.flash(text, 5000)
+
+    def _set_notice(self, text: str) -> None:
+        self._notice.setText(text)
+        self._notice.setVisible(bool(text))
 

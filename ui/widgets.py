@@ -2,14 +2,24 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation
+from PySide6.QtCore import (
+    QEasingCurve, QEvent, QObject, QPoint, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer,
+    QVariantAnimation, Signal,
+)
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QButtonGroup,
+    QFileDialog,
+    QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
+    QProgressBar,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -76,7 +86,7 @@ class GlassCard(QWidget):
     """
 
     SHADOW = {"card": (3, 2, 3, 8), "panel": (4, 3, 4, 10), "inner": (0, 0, 0, 0),
-              "toast": (6, 3, 6, 14), "pill": (6, 3, 6, 14)}
+              "toast": (6, 3, 6, 14), "pill": (6, 3, 6, 14), "drawer": (8, 4, 4, 16)}
 
     def __init__(self, level: str = "card", radius: float = theme.RADIUS_LG, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -85,6 +95,39 @@ class GlassCard(QWidget):
         self.radius = radius
         self.setContentsMargins(*self.SHADOW[level])
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        # Hover: the rim and sheen brighten smoothly, as if the glass catches more light.
+        self._hover = 0.0
+        self._hover_anim = QVariantAnimation(self)
+        self._hover_anim.setDuration(220)
+        self._hover_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._hover_anim.valueChanged.connect(self._set_hover)
+        self.hover_glow = level in ("card", "toast")
+
+    def _set_hover(self, value: float) -> None:
+        self._hover = float(value)
+        self.update()
+
+    def _animate_hover(self, target: float) -> None:
+        if not self.hover_glow:
+            return
+        self._hover_anim.stop()
+        self._hover_anim.setStartValue(self._hover)
+        self._hover_anim.setEndValue(target)
+        self._hover_anim.start()
+
+    def enterEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        self._animate_hover(1.0)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        self._animate_hover(0.0)
+        super().leaveEvent(event)
+
+    def set_level(self, level: str) -> None:
+        """Switch material, e.g. the queue rail becomes a denser floating drawer on small windows."""
+        self.level = level
+        self.setContentsMargins(*self.SHADOW[level])
+        self.update()
 
     def glass_rect(self) -> QRectF:
         left, top, right, bottom = self.SHADOW[self.level]
@@ -107,6 +150,8 @@ class GlassCard(QWidget):
             top = bottom = theme.color("inner")
         elif self.level in ("toast", "pill"):  # floats over content, so it needs a denser material
             top, bottom = theme.color("float_top"), theme.color("float_bottom")
+        elif self.level == "drawer":  # popups hold lists and settings: almost opaque so text never clashes
+            top, bottom = theme.color("float_top", 0.97), theme.color("float_bottom", 0.97)
         else:
             top, bottom = theme.color("glass_top"), theme.color("glass_bottom")
         fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
@@ -116,7 +161,8 @@ class GlassCard(QWidget):
 
         # Specular sheen across the upper part: the "liquid" highlight of the glass.
         sheen = QLinearGradient(rect.topLeft(), QPointF(rect.left(), rect.top() + min(rect.height(), 140)))
-        sheen.setColorAt(0.0, theme.color("sheen"))
+        glow = 1.0 + 0.7 * self._hover
+        sheen.setColorAt(0.0, theme.color("sheen", min(theme.color("sheen").alphaF() * glow, 1.0)))
         clear = theme.color("sheen", 0.0)
         sheen.setColorAt(1.0, clear)
         painter.fillPath(shape, sheen)
@@ -127,7 +173,7 @@ class GlassCard(QWidget):
         painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
         # Liquid-glass rim: bright where light enters at the top, faint at the sides, and a
         # softer refracted glow along the bottom edge.
-        top_light = theme.color("rim_top")
+        top_light = theme.color("rim_top", min(theme.color("rim_top").alphaF() * glow, 1.0))
         rim = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         rim.setColorAt(0.0, top_light)
         rim.setColorAt(min(0.35, 40 / max(rect.height(), 1)), theme.color("rim_bottom"))
@@ -187,10 +233,91 @@ def page_header(title: str) -> QHBoxLayout:
     return row
 
 
+def animate_value(bar: QProgressBar, value: int, duration: int = 320) -> None:
+    """Glide a progress bar to its new value instead of jumping."""
+    anim = getattr(bar, "_value_anim", None)
+    if anim is None:
+        anim = QPropertyAnimation(bar, b"value", bar)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        bar._value_anim = anim  # type: ignore[attr-defined]
+    if value <= bar.value():  # resets and finished bars snap
+        anim.stop()
+        bar.setValue(value)
+        return
+    anim.stop()
+    anim.setDuration(duration)
+    anim.setStartValue(bar.value())
+    anim.setEndValue(value)
+    anim.start()
+
+
+def fade_in(widget: QWidget, duration: int = 260) -> None:
+    effect = QGraphicsOpacityEffect(widget)
+    widget.setGraphicsEffect(effect)
+    anim = QPropertyAnimation(effect, b"opacity", widget)
+    anim.setDuration(duration)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+    anim.finished.connect(lambda: widget.setGraphicsEffect(None))  # crisp text once settled
+    anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+
+def reveal(widget: QWidget, duration: int = 340) -> None:
+    """Show a hidden widget by growing its height from zero while it fades in."""
+    if widget.isVisible():
+        return
+    widget.setMaximumHeight(0)
+    widget.show()
+    target = widget.sizeHint().height()
+    grow = QPropertyAnimation(widget, b"maximumHeight", widget)
+    grow.setDuration(duration)
+    grow.setStartValue(0)
+    grow.setEndValue(target)
+    grow.setEasingCurve(QEasingCurve.Type.OutCubic)
+    grow.finished.connect(lambda: widget.setMaximumHeight(16777215))
+    grow.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+    fade_in(widget, duration)
+
+
+def pulse(button: QWidget) -> None:
+    """A soft accent glow that blooms and fades around a button, for a confirmed action.
+
+    One glow per button: a new pulse while one is running just restarts it.
+    """
+    anim = getattr(button, "_pulse_anim", None)
+    if anim is not None:
+        anim.stop()
+        anim.start()
+        return
+    glow = QGraphicsDropShadowEffect(button)
+    glow.setOffset(0, 0)
+    glow.setColor(theme.color("accent", 0.75))
+    glow.setBlurRadius(0)
+    button.setGraphicsEffect(glow)
+    anim = QVariantAnimation(button)
+    anim.setDuration(620)
+    anim.setKeyValueAt(0.0, 0.0)
+    anim.setKeyValueAt(0.3, 34.0)
+    anim.setKeyValueAt(1.0, 0.0)
+    anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+    anim.valueChanged.connect(lambda v: glow.setBlurRadius(float(v)))
+
+    def done() -> None:
+        button._pulse_anim = None  # type: ignore[attr-defined]
+        button.setGraphicsEffect(None)
+        anim.deleteLater()
+
+    anim.finished.connect(done)
+    button._pulse_anim = anim  # type: ignore[attr-defined]
+    anim.start()
+
+
 def primary_button(text: str, icon: str = "") -> QPushButton:
     button = QPushButton(text)
     button.setObjectName("PrimaryButton")
     button.setCursor(Qt.CursorShape.PointingHandCursor)
+    button.clicked.connect(lambda: pulse(button))
     if icon:
         button.setIconSize(QSize(18, 18))
 
@@ -246,6 +373,21 @@ class Segmented(QFrame):
         self._row.addWidget(button, 1)
         return button
 
+    def clear(self) -> None:
+        """Remove every option (used when the choices depend on another selection)."""
+        for button in list(self.group.buttons()):
+            self.group.removeButton(button)
+            self._row.removeWidget(button)
+            button.hide()
+            button.deleteLater()
+        self._anim.stop()
+        self._thumb = QRectF()
+        self.update()
+
+    def refresh_thumb(self) -> None:
+        """Place the thumb once the layout has given the buttons their geometry."""
+        QTimer.singleShot(0, lambda: self._set_thumb(self._target()))
+
     def _target(self) -> QRectF:
         button = self.group.checkedButton()
         if button is None or button.isHidden():
@@ -292,6 +434,78 @@ class Segmented(QFrame):
         painter.drawRoundedRect(rect, 8, 8)
 
 
+class NameField(QFrame):
+    """Editable output name with its extension after it.
+
+    It starts with the app's suggested name; once the user types, suggestions no longer
+    overwrite it, and "ใช้ชื่อเดิม" brings the suggestion back. An emptied field falls back too.
+    """
+
+    changed = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("Control")
+        self.setFixedHeight(theme.CONTROL_HEIGHT)
+        self._default = ""
+        self.edited = False
+        self.edit = QLineEdit()
+        self.edit.setObjectName("NameEdit")
+        self.edit.setPlaceholderText("ชื่อไฟล์")
+        self.edit.installEventFilter(self)
+        self.ext_label = QLabel()
+        self.ext_label.setObjectName("Unit")
+        self.reset_button = QPushButton("ใช้ชื่อเดิม")
+        self.reset_button.setObjectName("RailClear")
+        self.reset_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.reset_button.hide()
+        self.reset_button.clicked.connect(self.reset)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(14, 0, 10, 0)
+        row.setSpacing(6)
+        row.addWidget(self.edit, 1)
+        row.addWidget(self.ext_label)
+        row.addWidget(self.reset_button)
+        self.edit.textEdited.connect(self._on_edited)
+        self.edit.textChanged.connect(lambda _t: self.changed.emit())
+        self.edit.editingFinished.connect(self._on_finished)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt API) - focus ring on the whole field
+        if obj is self.edit and event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+            self.setProperty("active", event.type() == QEvent.Type.FocusIn)
+            theme.repolish(self)
+        return False
+
+    def _on_edited(self, _text: str) -> None:
+        self.edited = True
+        self.reset_button.setVisible(self.edit.text().strip() != self._default)
+
+    def _on_finished(self) -> None:
+        if not self.edit.text().strip():
+            self.reset()
+
+    def set_default(self, name: str) -> None:
+        """The app's suggestion. Replaces the text only while the user has not edited it."""
+        self._default = name
+        if not self.edited or not self.edit.text().strip():
+            self.edited = False
+            self.edit.setText(name)
+            self.edit.setCursorPosition(0)
+            self.reset_button.hide()
+
+    def reset(self) -> None:
+        self.edited = False
+        self.edit.setText(self._default)
+        self.edit.setCursorPosition(0)
+        self.reset_button.hide()
+
+    def set_extension(self, ext: str) -> None:
+        self.ext_label.setText(f".{ext.lstrip('.')}" if ext else "")
+
+    def name(self) -> str:
+        return self.edit.text().strip() or self._default
+
+
 class ElidedLabel(QLabel):
     """Single-line label that shows an ellipsis instead of widening its parent."""
 
@@ -318,3 +532,190 @@ class ElidedLabel(QLabel):
     def _elide(self) -> None:
         width = max(self.width() - 2, 10)
         super().setText(self.fontMetrics().elidedText(self._full, self._mode, width))
+
+
+def pop_in(widget: QWidget, delay: int = 0, rise: int = 18, duration: int = 420) -> None:
+    """Show a widget with a soft rise and fade, like a card popping into place (staggered with delay)."""
+    effect = QGraphicsOpacityEffect(widget)
+    effect.setOpacity(0.0)
+    widget.setGraphicsEffect(effect)
+    widget.show()
+
+    def start() -> None:
+        if widget.graphicsEffect() is not effect:
+            return
+        end = widget.pos()
+        move = QPropertyAnimation(widget, b"pos", widget)
+        move.setDuration(duration)
+        move.setStartValue(end + QPoint(0, rise))
+        move.setEndValue(end)
+        move.setEasingCurve(QEasingCurve.Type.OutBack)
+        fade = QPropertyAnimation(effect, b"opacity", widget)
+        fade.setDuration(duration - 80)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        fade.finished.connect(lambda: widget.setGraphicsEffect(None))
+        move.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        fade.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    QTimer.singleShot(max(delay, 0) + 16, start)  # after the layout has placed the widget
+
+
+class Columns(QWidget):
+    """Two columns side by side that stack into one on narrow content areas."""
+
+    def __init__(self, breakpoint: int = 820, stretch: tuple[int, int] = (1, 1), parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.breakpoint = breakpoint
+        self._box = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)
+        self._box.setContentsMargins(0, 0, 0, 0)
+        self._box.setSpacing(16)
+        self.left = QVBoxLayout()
+        self.left.setSpacing(16)
+        self.right = QVBoxLayout()
+        self.right.setSpacing(16)
+        self._box.addLayout(self.left, stretch[0])
+        self._box.addLayout(self.right, stretch[1])
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        wide = self.width() >= self.breakpoint
+        direction = QBoxLayout.Direction.LeftToRight if wide else QBoxLayout.Direction.TopToBottom
+        if self._box.direction() != direction:
+            self._box.setDirection(direction)
+
+
+class ActionBar(QWidget):
+    """A page's summary text and action buttons. MainWindow shows it in the same place on every page."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._row = QHBoxLayout(self)
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(12)
+        self.hint = ElidedLabel()
+        self.hint.setObjectName("Hint")
+        self.hint.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._row.addWidget(self.hint, 1)
+        self._summary = ""
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setSingleShot(True)
+        self._flash_timer.timeout.connect(lambda: self.hint.set_full_text(self._summary))
+
+    def add_button(self, button: QPushButton) -> QPushButton:
+        self._row.addWidget(button)
+        return button
+
+    def set_summary(self, text: str) -> None:
+        self._summary = text
+        if not self._flash_timer.isActive():
+            self.hint.set_full_text(text)
+
+    def flash(self, text: str, ms: int = 3500) -> None:
+        """Show a short confirmation (e.g. 'added to the queue') before going back to the summary."""
+        self.hint.set_full_text(text)
+        fade_in(self.hint, 200)
+        self._flash_timer.start(ms)
+
+
+def local_paths(event) -> list[str]:
+    return [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
+
+
+def handle_drop(event, on_file, on_error) -> None:
+    """Accept one dropped local file; explain folders, remote files and multiple files."""
+    paths = local_paths(event)
+    if not paths:
+        on_error("วางได้เฉพาะไฟล์จากเครื่องนี้")
+        return
+    if Path(paths[0]).is_dir():
+        on_error("ไม่รองรับโฟลเดอร์ กรุณาเลือกไฟล์เดียว")
+        return
+    event.acceptProposedAction()
+    on_file(paths[0])
+    if len(paths) > 1:
+        on_error(f"รับครั้งละ 1 ไฟล์ — ใช้ไฟล์แรก ({Path(paths[0]).name})")
+
+
+class DropZone(QFrame):
+    """Dashed area to drop a file on or click to pick one (the app's single file-picking style)."""
+
+    file_chosen = Signal(str)
+    rejected = Signal(str)
+
+    def __init__(self, title: str, file_filter: str, dialog_title: str = "เลือกไฟล์",
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("DropZone")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAcceptDrops(True)
+        self.file_filter = file_filter
+        self.dialog_title = dialog_title
+        self.start_dir = str(Path.home())
+        self._icon = QLabel()
+        self._icon.setObjectName("DzIcon")
+        self._icon.setFixedSize(60, 60)
+        self._icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 34, 24, 34)
+        layout.setSpacing(8)
+        layout.addStretch(1)
+        layout.addWidget(self._icon, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(label(title, "DzTitle"), 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(label("หรือคลิกเพื่อเลือกไฟล์", "DzSub"), 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(1)
+        theme.on_change(self._refresh_icon)
+
+    def _refresh_icon(self) -> None:
+        self._icon.setPixmap(theme.icon_pixmap("upload", theme.hex_color("accent"), 28, 2.0))
+
+    def browse(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self.window(), self.dialog_title, self.start_dir, self.file_filter)
+        if path:
+            self.start_dir = str(Path(path).parent)
+            self.file_chosen.emit(path)
+
+    def set_drag(self, active: bool) -> None:
+        self.setProperty("drag", active)
+        theme.repolish(self)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.browse()
+        super().mousePressEvent(event)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if local_paths(event):
+            event.acceptProposedAction()
+            self.set_drag(True)
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        self.set_drag(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        self.set_drag(False)
+        handle_drop(event, self.file_chosen.emit, self.rejected.emit)
+
+
+class PageDrop(QObject):
+    """Lets a whole page take a dropped file (e.g. to replace the current one)."""
+
+    def __init__(self, page: QWidget, on_file, on_error) -> None:
+        super().__init__(page)
+        self._on_file, self._on_error = on_file, on_error
+        page.setAcceptDrops(True)
+        page.installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt API)
+        kind = event.type()
+        if kind in (QEvent.Type.DragEnter, QEvent.Type.DragMove) and local_paths(event):
+            event.acceptProposedAction()
+            return True
+        if kind == QEvent.Type.Drop:
+            handle_drop(event, self._on_file, self._on_error)
+            return True
+        return False

@@ -5,9 +5,12 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from core.errors import InputError, TaskCancelledError
+
+if TYPE_CHECKING:
+    from core.hwaccel import Engine
 
 ProgressCallback = Callable[[int, str], None]
 
@@ -32,6 +35,16 @@ class BaseMediaTask(ABC):
         self._cancel_event = threading.Event()
         self._progress_callback: ProgressCallback | None = None
         self._temp_files: list[Path] = []
+        self.engine: Engine | None = None  # video encoder engine the queue assigned (GPU or CPU)
+
+    def resource(self) -> str | None:
+        """What this job needs exclusively: a video codec key ('h264'...) for an encoder engine,
+        'whisper' for the speech model, or None when it can run alongside anything."""
+        return None
+
+    def engine_note(self) -> str:
+        """' · Intel GPU' style suffix for progress messages, empty when no engine is used."""
+        return f" · {self.engine.short}" if self.engine is not None else ""
 
     @property
     def status(self) -> TaskStatus:

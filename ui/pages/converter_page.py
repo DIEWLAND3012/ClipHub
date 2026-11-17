@@ -1,36 +1,66 @@
-"""Feature 2 page: converter and audio separator UI (owner: member 2)."""
+"""Feature 2 page: converter for video and audio files (owner: member 2).
+
+Flow: drop or pick a file -> its details appear, with the container shown largest ->
+1 convert to video or audio, 2 file format, 3 codec and quality, 4 output name -> start.
+"""
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from PySide6.QtCore import (
-    Property, QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, QThread, QTimer, Signal,
-)
-from PySide6.QtGui import (
-    QColor, QDragEnterEvent, QDropEvent, QPainter, QPen, QStandardItem, QStandardItemModel,
-)
+from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, QThread, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QListView,
-    QPushButton, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QListView,
+    QPushButton, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from core.errors import ClipHubError
-from core.ffmpeg import probe_duration
+from core.ffmpeg import available_encoders, probe_media
+from core.naming import safe_filename, strip_extension
 from tasks.converter import (
-    SEPARATOR_FORMATS, VIDEO_TARGETS, ConverterTask, audio_sidecar_path,
-    describe_conversion, suggest_output_path,
+    AUDIO_BITRATES, AUDIO_CODECS, AUDIO_CODECS_FOR, AUDIO_TARGETS, COPY, FRAME_RATES, LOSSLESS_AUDIO,
+    RESOLUTIONS, SEPARATOR_FORMATS, VIDEO_CODECS, VIDEO_CODECS_FOR, VIDEO_TARGETS,
+    ConverterTask, ConvertSettings, audio_sidecar_path, copy_problem, describe_conversion, describe_settings,
+    suggest_output_path,
 )
 from ui import theme
-from ui.widgets import ElidedLabel, card, page_header, primary_button
+from ui.widgets import (
+    ActionBar, Columns, DropZone, ElidedLabel, NameField, PageDrop, Segmented, card, fade_in, field_label, label,
+    page_header, pop_in, primary_button,
+)
 
-_VIDEO_EXTS = "*.mp4 *.mkv *.avi *.mov *.webm *.m4v *.flv *.wmv *.ts"
-_AUDIO_EXTS = "*.mp3 *.wav *.aac *.flac *.m4a *.ogg *.opus *.wma"
+_VIDEO_EXTS = "*.mp4 *.mkv *.avi *.mov *.webm *.m4v *.flv *.wmv *.ts *.mts *.3gp"
+_AUDIO_EXTS = "*.mp3 *.wav *.aac *.flac *.m4a *.ogg *.opus *.wma *.aiff *.alac"
 FILE_FILTERS = ";;".join([
     f"ไฟล์วิดีโอและเสียง ({_VIDEO_EXTS} {_AUDIO_EXTS})",
     f"ไฟล์วิดีโอ ({_VIDEO_EXTS})",
     f"ไฟล์เสียง ({_AUDIO_EXTS})",
     "ทุกไฟล์ (*)",
 ])
+FORMAT_LABELS = {"mp4": "MP4", "mov": "MOV", "mkv": "MKV", "webm": "WebM", "avi": "AVI",
+                 "mp3": "MP3", "m4a": "M4A", "wav": "WAV", "flac": "FLAC", "opus": "Opus", "aac": "AAC"}
+FORMAT_TIPS = {
+    "mp4": "เล่นได้ทุกที่", "mov": "สำหรับ Final Cut / iMovie / Apple", "mkv": "เก็บได้ทุกโค้ดเดก",
+    "webm": "สำหรับเว็บ", "avi": "สำหรับโปรแกรมรุ่นเก่า", "mp3": "เล่นได้ทุกที่",
+    "m4a": "AAC คุณภาพดีกว่า MP3 ที่ขนาดเท่ากัน", "wav": "ไม่บีบอัด ไฟล์ใหญ่", "flac": "Lossless ไฟล์เล็กกว่า WAV",
+    "opus": "คุณภาพสูงที่บิตเรตต่ำ", "aac": "AAC แบบไฟล์ดิบ (ADTS)",
+}
+CODEC_TIPS = {
+    "h264": "เข้ากันได้กว้างที่สุด", "h265": "ไฟล์เล็กกว่า H.264 ราวครึ่งหนึ่ง แต่แปลงช้ากว่า",
+    "av1": "ไฟล์เล็กที่สุด แต่อุปกรณ์เก่าอาจเล่นไม่ได้", "vp9": "โค้ดเดกของเว็บ / YouTube",
+    "prores": "สำหรับตัดต่อ ไฟล์ใหญ่มาก", COPY: "ไม่เข้ารหัสใหม่ เร็วมากและไม่เสียคุณภาพ",
+}
+# Friendly names for what ffprobe reports.
+CODEC_NAMES = {
+    "h264": "H.264", "hevc": "H.265 (HEVC)", "av1": "AV1", "vp9": "VP9", "vp8": "VP8", "prores": "ProRes",
+    "mpeg4": "MPEG-4", "mjpeg": "MJPEG", "mpeg2video": "MPEG-2", "aac": "AAC", "mp3": "MP3", "opus": "Opus",
+    "vorbis": "Vorbis", "flac": "FLAC", "alac": "ALAC", "ac3": "AC-3", "eac3": "E-AC-3",
+    "pcm_s16le": "PCM 16-bit", "pcm_s24le": "PCM 24-bit", "pcm_f32le": "PCM 32-bit float",
+}
+CHANNELS = {1: "โมโน", 2: "สเตอริโอ", 6: "5.1", 8: "7.1"}
+LOSSY_IN_VIDEO = ("aac", "mp3", "opus")
+
 
 def format_size(num_bytes: int) -> str:
     size = float(num_bytes)
@@ -49,10 +79,23 @@ def format_duration(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes:02d}:{secs:02d}"
 
 
-class _ProbeThread(QThread):
-    """Reads size and duration of the chosen file so the GUI thread never touches the disk."""
+def format_bitrate(bps: int) -> str:
+    if bps <= 0:
+        return "—"
+    return f"{bps / 1_000_000:.1f} Mbps" if bps >= 1_000_000 else f"{bps / 1000:.0f} kbps"
 
-    probed = Signal(int, object)  # serial, {"size": int | None, "duration": float | None, "error": str | None}
+
+def codec_name(codec: str, profile: str = "") -> str:
+    name = CODEC_NAMES.get(codec, codec.upper() or "—")
+    if profile and profile.lower() not in ("unknown", "lc") and codec in ("h264", "hevc"):
+        name += f" · {profile}"
+    return name
+
+
+class _ProbeThread(QThread):
+    """Reads everything about the chosen file so the GUI thread never touches the disk."""
+
+    probed = Signal(int, object)  # serial, {"info": dict | None, "error": str | None}
 
     def __init__(self, serial: int, path: str) -> None:
         super().__init__()
@@ -60,22 +103,19 @@ class _ProbeThread(QThread):
         self._path = path
 
     def run(self) -> None:
-        info: dict[str, object] = {"size": None, "duration": None, "error": None}
+        result: dict[str, object] = {"info": None, "error": None}
         try:
-            info["size"] = Path(self._path).stat().st_size
-            info["duration"] = probe_duration(self._path)
+            info = probe_media(self._path)
+            if not info["size"]:
+                info["size"] = Path(self._path).stat().st_size
+            if info["video"] is None and info["audio"] is None:
+                raise ClipHubError("ไฟล์นี้ไม่มีภาพหรือเสียงให้แปลง")
+            result["info"] = info
         except ClipHubError as exc:
-            info["error"] = str(exc)
+            result["error"] = str(exc)
         except OSError as exc:
-            info["error"] = f"อ่านไฟล์ไม่ได้: {exc.strerror or exc}"
-        self.probed.emit(self._serial, info)
-
-
-class _ElidedLabel(ElidedLabel):
-    """Single-line label that shortens the middle of long file names."""
-
-    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
-        super().__init__(text, Qt.TextElideMode.ElideMiddle, parent)
+            result["error"] = f"อ่านไฟล์ไม่ได้: {exc.strerror or exc}"
+        self.probed.emit(self._serial, result)
 
 
 class _Combo(QComboBox):
@@ -96,8 +136,8 @@ class SwitchCheckBox(QCheckBox):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._offset = 1.0 if self.isChecked() else 0.0
         self._animation = QPropertyAnimation(self, b"offset", self)
-        self._animation.setDuration(180)
-        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._animation.setDuration(220)
+        self._animation.setEasingCurve(QEasingCurve.Type.OutBack)
         self.toggled.connect(self._animate)
 
     def _animate(self, checked: bool) -> None:
@@ -126,7 +166,7 @@ class SwitchCheckBox(QCheckBox):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if not self.isEnabled():
             painter.setOpacity(0.4)
-        mix = self._offset
+        mix = max(0.0, min(self._offset, 1.0))
         off, on = theme.color("fill_hover"), theme.color("switch_on")
         track = QColor(
             round(off.red() + (on.red() - off.red()) * mix),
@@ -137,7 +177,7 @@ class SwitchCheckBox(QCheckBox):
         painter.setPen(QPen(theme.color("accent"), 2) if self.hasFocus() else Qt.PenStyle.NoPen)
         painter.setBrush(track)
         painter.drawRoundedRect(QRectF(1, 1, 44, 26), 13, 13)
-        knob = QRectF(3.0 + 18.0 * mix, 3.0, 22, 22)
+        knob = QRectF(3.0 + 18.0 * self._offset, 3.0, 22, 22)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 40))
         painter.drawEllipse(knob.translated(0, 1))
@@ -145,96 +185,30 @@ class SwitchCheckBox(QCheckBox):
         painter.drawEllipse(knob)
 
 
-class _DropZone(QFrame):
-    """Dashed target that takes one file by drag and drop, click or the browse button."""
-
-    file_dropped = Signal(str, int)  # first path, number of files dropped
-    drop_rejected = Signal(str)      # Thai message
-    browse_requested = Signal()
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("DropZone")
-        self.setAcceptDrops(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        icon = QLabel()
-        icon.setObjectName("DzIcon")
-        icon.setFixedSize(60, 60)
-        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._icon = icon
-        theme.on_change(self._refresh_icon)
-        title = QLabel("ลากไฟล์มาวางที่นี่")
-        title.setObjectName("DzTitle")
-        # two fixed lines instead of word wrap: wrapped labels in nested layouts get clipped
-        sub = QLabel("หรือคลิกเพื่อเลือกไฟล์")
-        sub.setObjectName("DzSub")
-        self.browse_button = QPushButton("เลือกไฟล์จากเครื่อง")
-        self.browse_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.browse_button.clicked.connect(self.browse_requested)
-        self.browse_button.hide()  # the whole drop zone is clickable
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 30, 24, 28)
-        layout.setSpacing(6)
-        for widget in (icon, title, sub):
-            layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignHCenter)
-        layout.addSpacing(8)
-        layout.addWidget(self.browse_button, 0, Qt.AlignmentFlag.AlignHCenter)
-        for label in (title, sub):
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-    def _refresh_icon(self) -> None:
-        self._icon.setPixmap(theme.icon_pixmap("upload", theme.hex_color("accent"), 28, 2.0))
-
-    def _set_drag(self, active: bool) -> None:
-        self.setProperty("drag", active)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    @staticmethod
-    def _local_paths(event) -> list[str]:
-        return [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
-
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802 (Qt API)
-        if self._local_paths(event):
-            event.acceptProposedAction()
-            self._set_drag(True)
-        else:
-            event.ignore()
-
-    def dragLeaveEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        self._set_drag(False)
-        super().dragLeaveEvent(event)
-
-    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802 (Qt API)
-        self._set_drag(False)
-        paths = self._local_paths(event)
-        if not paths:
-            self.drop_rejected.emit("วางได้เฉพาะไฟล์จากเครื่องนี้")
-            return
-        if Path(paths[0]).is_dir():
-            self.drop_rejected.emit("ไม่รองรับโฟลเดอร์ กรุณาเลือกไฟล์เดียว")
-            return
-        event.acceptProposedAction()
-        self.file_dropped.emit(paths[0], len(paths))
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.browse_requested.emit()
-        super().mousePressEvent(event)
+def _info_tile(key: str) -> tuple[QFrame, ElidedLabel]:
+    tile = QFrame()
+    tile.setObjectName("InfoTile")
+    box = QVBoxLayout(tile)
+    box.setContentsMargins(11, 8, 10, 9)
+    box.setSpacing(1)
+    box.addWidget(label(key, "InfoKey"))
+    value = ElidedLabel()
+    value.setObjectName("InfoValue")
+    box.addWidget(value)
+    return tile, value
 
 
-def _card(tight: bool = False):
-    margin = 14 if tight else 20
-    return card(spacing=12, margins=(margin, margin - 2, margin, margin))
-
-
-def _label(text: str, name: str = "") -> QLabel:
-    label = QLabel(text)
-    if name:
-        label.setObjectName(name)
-    return label
+def _step(number: int, text: str) -> tuple[QHBoxLayout, QLabel]:
+    badge = label(str(number), "StepNumber")
+    badge.setFixedSize(20, 20)
+    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    title = field_label(text)
+    row = QHBoxLayout()
+    row.setSpacing(8)
+    row.addWidget(badge)
+    row.addWidget(title)
+    row.addStretch(1)
+    return row, title
 
 
 class ConverterPage(QWidget):
@@ -244,235 +218,444 @@ class ConverterPage(QWidget):
         super().__init__(parent)
         self.setObjectName("ConverterPage")
         self._input_path: str | None = None
-        self._ready = False          # probe finished OK for the current file
+        self._info: dict[str, Any] | None = None
         self._serial = 0
         self._probes: list[_ProbeThread] = []
         self._reserved: set[Path] = set()  # outputs of queued jobs that are not on disk yet
         self._last_dir = str(Path.home())
-        self._status_timer = QTimer(self)
-        self._status_timer.setSingleShot(True)
-        self._status_timer.timeout.connect(lambda: self.status_label.setText(""))
+        self._encoders = available_encoders()
+        self._tile_columns = 4
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(16)
-        root.addLayout(self._build_header())
-        root.addWidget(self._build_drop_card())
-        root.addWidget(self._build_file_card())
-        root.addWidget(self._build_target_card())
-        root.addWidget(self._build_separator_card())
-        root.addLayout(self._build_actions())
+        root.addLayout(page_header("แปลงไฟล์"))
+        self.dropzone = DropZone("ลากไฟล์วิดีโอหรือเสียงมาวางที่นี่", FILE_FILTERS, "เลือกไฟล์วิดีโอหรือเสียง")
+        self.dropzone.setMinimumHeight(300)
+        self.dropzone.file_chosen.connect(self.set_input_file)
+        self.dropzone.rejected.connect(self._set_notice)
+        root.addWidget(self.dropzone)
+        PageDrop(self, self.set_input_file, self._set_notice)  # drop anywhere, also to replace the file
+        self.notice_label = label("", "ErrorText", wrap=True)
+        self.notice_label.hide()
+        root.addWidget(self.notice_label)
+        # The file on the left, what to turn it into on the right.
+        self.columns = Columns(breakpoint=820, stretch=(5, 6))
+        self.file_card = self._build_file_card()
+        self.file_card.hide()
+        self.columns.left.addWidget(self.file_card)
+        self.columns.left.addStretch(1)
+        self.options_card = self._build_options_card()
+        self.options_card.hide()
+        self.columns.right.addWidget(self.options_card)
+        self.columns.right.addStretch(1)
+        root.addWidget(self.columns)
+        self._build_actions()
         root.addStretch(1)
 
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._wait_probes)
-        self._refresh()
-        theme.on_change(self._refresh_icons)
+        self._on_format_changed()
 
-    def _refresh_icons(self) -> None:
-        self._thumb.setPixmap(theme.icon_pixmap("film", theme.hex_color("text2"), 22, 1.6))
-
-    # ----- layout -------------------------------------------------------------------
-    def _build_header(self) -> QHBoxLayout:
-        return page_header("แปลงไฟล์")
-
-    def _build_drop_card(self) -> QFrame:
-        card, layout = _card()
-        self.dropzone = _DropZone()
-        self.dropzone.file_dropped.connect(self._on_file_dropped)
-        self.dropzone.drop_rejected.connect(lambda message: self._set_notice(message, error=True))
-        self.dropzone.browse_requested.connect(self._browse)
-        self.notice_label = _ElidedLabel()
-        self.notice_label.setObjectName("NoticeText")
-        self.notice_label.hide()
-        layout.addWidget(self.dropzone)
-        layout.addWidget(self.notice_label)
-        return card
-
+    # ----- file card ------------------------------------------------------------------
     def _build_file_card(self) -> QFrame:
-        self.file_card, layout = _card(tight=True)
-        self.file_card.hide()
-        row_frame = QFrame()
-        row_frame.setObjectName("FileRow")
-        row = QHBoxLayout(row_frame)
-        row.setContentsMargins(14, 14, 14, 14)
-        row.setSpacing(14)
+        frame, layout = card(spacing=14, margins=(20, 18, 20, 20))
+        top = QHBoxLayout()
+        top.setSpacing(16)
+        self.format_badge = label("—", "FormatBadge")
+        self.format_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.format_badge.setMinimumSize(96, 76)
+        texts = QVBoxLayout()
+        texts.setSpacing(3)
+        self.file_name_label = ElidedLabel(mode=Qt.TextElideMode.ElideMiddle)
+        self.file_name_label.setObjectName("FileTitle")
+        self.file_kind_label = ElidedLabel()
+        self.file_kind_label.setObjectName("MetaRow")
+        texts.addStretch(1)
+        texts.addWidget(self.file_name_label)
+        texts.addWidget(self.file_kind_label)
+        texts.addStretch(1)
+        change = QPushButton("เปลี่ยนไฟล์")
+        change.setCursor(Qt.CursorShape.PointingHandCursor)
+        change.clicked.connect(lambda: self.dropzone.browse())
+        top.addWidget(self.format_badge)
+        top.addLayout(texts, 1)
+        top.addWidget(change, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addLayout(top)
 
-        thumb = QLabel()
-        thumb.setObjectName("Thumb")
-        thumb.setFixedSize(56, 44)
-        thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._thumb = thumb
-        meta = QVBoxLayout()
-        meta.setSpacing(2)
-        self.file_name_label = _ElidedLabel()
-        self.file_name_label.setObjectName("FileName")
-        self.file_meta_label = _label("", "FileMeta")
-        meta.addWidget(self.file_name_label)
-        meta.addWidget(self.file_meta_label)
-        self.file_size_label = _label("", "FileSize")
-
-        row.addWidget(thumb)
-        row.addLayout(meta, 1)
-        row.addWidget(self.file_size_label)
-        self.file_error_label = _ElidedLabel()
-        self.file_error_label.setObjectName("ErrorText")
+        self.tiles_grid = QGridLayout()
+        self.tiles_grid.setHorizontalSpacing(8)
+        self.tiles_grid.setVerticalSpacing(8)
+        self.tiles: dict[str, tuple[QFrame, ElidedLabel]] = {}
+        for key, text in (("duration", "ความยาว"), ("size", "ขนาด"), ("bitrate", "บิตเรตรวม"),
+                          ("vcodec", "วิดีโอ"), ("resolution", "ความละเอียด"), ("fps", "เฟรมเรต"),
+                          ("acodec", "เสียง"), ("audio", "รายละเอียดเสียง")):
+            self.tiles[key] = _info_tile(text)
+        self._layout_tiles(4)
+        layout.addLayout(self.tiles_grid)
+        self.file_error_label = label("", "ErrorText", wrap=True)
         self.file_error_label.hide()
-        layout.addWidget(row_frame)
         layout.addWidget(self.file_error_label)
-        return self.file_card
+        return frame
 
-    def _build_target_card(self) -> QFrame:
-        card, layout = _card()
-        grid = QHBoxLayout()
-        grid.setSpacing(14)
+    def _layout_tiles(self, columns: int) -> None:
+        self._tile_columns = columns
+        for tile, _value in self.tiles.values():
+            self.tiles_grid.removeWidget(tile)
+        shown = [tile for tile, _value in self.tiles.values() if not tile.isHidden()]
+        for index, tile in enumerate(shown):
+            row, column = divmod(index, columns)
+            self.tiles_grid.addWidget(tile, row, column)
 
-        left = QVBoxLayout()
-        left.setSpacing(9)
-        left.addWidget(_label("แปลงเป็น", "FieldLabel"))
-        self.target_combo = _Combo()
-        model = QStandardItemModel(self.target_combo)
-        groups = (
-            ("วิดีโอ", [("MP4 (H.264)", "mp4"), ("MKV", "mkv"), ("AVI", "avi"), ("MOV", "mov")]),
-            ("เสียง", [("MP3", "mp3"), ("WAV", "wav"), ("AAC", "aac"), ("FLAC", "flac")]),
-        )
-        for title, entries in groups:
-            header = QStandardItem(title)
-            header.setFlags(Qt.ItemFlag.NoItemFlags)  # group heading, not selectable
-            model.appendRow(header)
-            for text, ext in entries:
-                item = QStandardItem(text)
-                item.setData(ext, Qt.ItemDataRole.UserRole)
-                model.appendRow(item)
-        self.target_combo.setModel(model)
-        self.target_combo.setCurrentIndex(1)  # MP4
-        self.target_combo.currentIndexChanged.connect(self._refresh)
-        left.addWidget(self.target_combo)
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        columns = 4 if self.file_card.width() >= 600 else 2
+        if columns != self._tile_columns:
+            self._layout_tiles(columns)
 
-        right = QVBoxLayout()
-        right.setSpacing(9)
-        right.addWidget(_label("ไฟล์ผลลัพธ์", "FieldLabel"))
-        self.output_label = _ElidedLabel()
-        self.output_label.setObjectName("OutName")
-        self.output_label.setFixedHeight(theme.CONTROL_HEIGHT)
-        right.addWidget(self.output_label)
+    # ----- options card ---------------------------------------------------------------
+    def _build_options_card(self) -> QFrame:
+        frame, layout = card(spacing=8, margins=(22, 16, 22, 16))
 
-        grid.addLayout(left, 1)
-        grid.addLayout(right, 1)
-        layout.addLayout(grid)
-        return card
+        row, _ = _step(1, "แปลงเป็น")
+        layout.addLayout(row)
+        self.kind_seg = Segmented()
+        self.kind_seg.setFixedHeight(theme.CONTROL_HEIGHT)
+        self.video_button = self.kind_seg.add("วิดีโอ", 0, icon="video")
+        self.audio_button = self.kind_seg.add("เสียงอย่างเดียว", 1, icon="audio")
+        self.video_button.setChecked(True)
+        self.kind_seg.group.idToggled.connect(lambda _i, on: on and self._on_kind_changed())
+        layout.addWidget(self.kind_seg)
 
-    def _build_separator_card(self) -> QFrame:
-        card, layout = _card()
-        row = QHBoxLayout()
-        row.setSpacing(14)
-        text = QVBoxLayout()
-        text.setSpacing(2)
-        text.addWidget(_label("แยกไฟล์เสียงออกมาด้วย", "ToggleTitle"))
-        self.separator_hint = _label("", "Note")
-        text.addWidget(self.separator_hint)
-        self.separator_hint.hide()  # the switch is simply disabled for audio targets
+        layout.addSpacing(6)
+        row, _ = _step(2, "รูปแบบไฟล์")
+        layout.addLayout(row)
+        self.video_formats = self._format_seg(VIDEO_TARGETS)
+        self.audio_formats = self._format_seg(AUDIO_TARGETS)
+        self.format_stack = QStackedWidget()
+        self.format_stack.addWidget(self.video_formats)
+        self.format_stack.addWidget(self.audio_formats)
+        self.format_stack.setFixedHeight(theme.CONTROL_HEIGHT)
+        layout.addWidget(self.format_stack)
 
+        layout.addSpacing(6)
+        row, self.step3_title = _step(3, "โค้ดเดก")
+        layout.addLayout(row)
+        self.settings_stack = QStackedWidget()
+        self.settings_stack.addWidget(self._build_video_settings())
+        self.settings_stack.addWidget(self._build_audio_settings())
+        layout.addWidget(self.settings_stack)
+        self.copy_note = label("", "Note", wrap=True)
+        self.copy_note.hide()
+        layout.addWidget(self.copy_note)
+
+        layout.addSpacing(6)
+        row, _ = _step(4, "ชื่อไฟล์")
+        layout.addLayout(row)
+        self.name_field = NameField()
+        self.name_field.changed.connect(self._refresh_hint)
+        layout.addWidget(self.name_field)
+        self.separator_row = QWidget()
+        sep = QHBoxLayout(self.separator_row)
+        sep.setContentsMargins(0, 4, 0, 0)
+        sep.setSpacing(12)
+        sep.addWidget(label("แยกไฟล์เสียงออกมาด้วย", "ToggleTitle"), 1)
         self.audio_format_combo = _Combo()
         self.audio_format_combo.setObjectName("FmtCombo")
         for ext in SEPARATOR_FORMATS:
             self.audio_format_combo.addItem(ext.upper(), ext)
         self.audio_format_combo.currentIndexChanged.connect(self._refresh)
-        self.extract_switch = SwitchCheckBox("แยกสตรีมเสียงออกจากวิดีโอ")
+        self.extract_switch = SwitchCheckBox("แยกไฟล์เสียงออกมาด้วย")
         self.extract_switch.toggled.connect(self._refresh)
+        sep.addWidget(self.audio_format_combo)
+        sep.addWidget(self.extract_switch)
+        layout.addWidget(self.separator_row)
+        return frame
 
-        row.addLayout(text, 1)
-        row.addWidget(self.audio_format_combo, 0, Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(self.extract_switch, 0, Qt.AlignmentFlag.AlignVCenter)
-        layout.addLayout(row)
-        return card
+    def _format_seg(self, formats: tuple[str, ...]) -> Segmented:
+        seg = Segmented()
+        for index, fmt in enumerate(formats):
+            seg.add(FORMAT_LABELS[fmt], index, tooltip=FORMAT_TIPS.get(fmt, ""))
+        seg.group.button(0).setChecked(True)
+        seg.group.idToggled.connect(lambda _i, on: on and self._on_format_changed())
+        return seg
 
-    def _build_actions(self) -> QVBoxLayout:
-        box = QVBoxLayout()
-        box.setSpacing(8)
-        row = QHBoxLayout()
-        row.setSpacing(18)
-        self.start_button = primary_button("เริ่มแปลงไฟล์", "convert")
-        self.start_button.clicked.connect(self._submit)
-        self.hint_label = _label("", "Hint")
-        row.addWidget(self.start_button)
-        row.addWidget(self.hint_label, 1)
-        self.status_label = _label("", "OkText")
-        box.addLayout(row)
-        box.addWidget(self.status_label)
+    def _build_video_settings(self) -> QWidget:
+        box = QWidget()
+        column = QVBoxLayout(box)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(10)
+        column.addWidget(field_label("โค้ดเดกวิดีโอ"))
+        self.vcodec_seg = Segmented()
+        self.vcodec_seg.setFixedHeight(theme.CONTROL_HEIGHT)
+        self.vcodec_seg.group.idToggled.connect(lambda _i, on: on and self._refresh())
+        column.addWidget(self.vcodec_seg)
+
+        self.resolution_combo = _Combo()
+        self.resolution_combo.addItem("ขนาดเดิม", None)
+        for height in RESOLUTIONS:
+            self.resolution_combo.addItem(f"{height}p", height)
+        self.fps_combo = _Combo()
+        self.fps_combo.addItem("เฟรมเรตเดิม", None)
+        for fps in FRAME_RATES:
+            self.fps_combo.addItem(f"{fps} fps", fps)
+        for combo in (self.resolution_combo, self.fps_combo):
+            combo.currentIndexChanged.connect(self._refresh)
+        self.video_tuning = QWidget()
+        grid = QGridLayout(self.video_tuning)
+        grid.setContentsMargins(0, 4, 0, 0)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(6)
+        grid.addWidget(field_label("ความละเอียด"), 0, 0)
+        grid.addWidget(field_label("เฟรมเรต"), 0, 1)
+        grid.addWidget(self.resolution_combo, 1, 0)
+        grid.addWidget(self.fps_combo, 1, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        column.addWidget(self.video_tuning)
+
+        self.acodec_combo = _Combo()
+        self.acodec_combo.currentIndexChanged.connect(self._refresh)
+        self.vbitrate_combo = _Combo()  # audio bitrate inside a video file
+        for kbps in AUDIO_BITRATES:
+            self.vbitrate_combo.addItem(f"{kbps} kbps", kbps)
+        self.vbitrate_combo.setCurrentIndex(self.vbitrate_combo.findData(192))
+        self.vbitrate_combo.currentIndexChanged.connect(self._refresh)
+        audio_row = QGridLayout()
+        audio_row.setContentsMargins(0, 4, 0, 0)
+        audio_row.setHorizontalSpacing(10)
+        audio_row.setVerticalSpacing(6)
+        audio_row.addWidget(field_label("เสียงในวิดีโอ"), 0, 0)
+        audio_row.addWidget(field_label("บิตเรตเสียง"), 0, 1)
+        audio_row.addWidget(self.acodec_combo, 1, 0)
+        audio_row.addWidget(self.vbitrate_combo, 1, 1)
+        column.addLayout(audio_row)
         return box
 
-    # ----- state --------------------------------------------------------------------
-    def target_ext(self) -> str:
-        return str(self.target_combo.currentData(Qt.ItemDataRole.UserRole) or "mp4")
+    def _build_audio_settings(self) -> QWidget:
+        box = QWidget()
+        column = QVBoxLayout(box)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(6)
+        self.abitrate_combo = _Combo()
+        self.abitrate_combo.currentIndexChanged.connect(self._refresh)
+        column.addWidget(self.abitrate_combo)
+        self.lossless_note = label("", "Note", wrap=True)
+        column.addWidget(self.lossless_note)
+        column.addStretch(1)
+        return box
 
-    def _extract_active(self) -> bool:
-        return self.extract_switch.isChecked() and self.target_ext() in VIDEO_TARGETS
+    def _build_actions(self) -> None:
+        """Summary + start button; MainWindow shows this bar in the same place on every page."""
+        self.action_bar = ActionBar()
+        self.start_button = self.action_bar.add_button(primary_button("เริ่มแปลงไฟล์", "convert"))
+        self.start_button.clicked.connect(self._submit)
+
+    # ----- current choices ------------------------------------------------------------
+    def is_audio_target(self) -> bool:
+        return self.audio_button.isChecked()
+
+    def target_ext(self) -> str:
+        if self.is_audio_target():
+            return AUDIO_TARGETS[max(self.audio_formats.group.checkedId(), 0)]
+        return VIDEO_TARGETS[max(self.video_formats.group.checkedId(), 0)]
+
+    def _selected_vcodec(self) -> str:
+        button = self.vcodec_seg.group.checkedButton()
+        return str(button.property("codec")) if button is not None else ""
+
+    def settings(self) -> ConvertSettings:
+        ext = self.target_ext()
+        if ext in VIDEO_TARGETS:
+            acodec = str(self.acodec_combo.currentData() or "")
+            return ConvertSettings(
+                # Always the highest quality: smaller presets visibly broke up the picture.
+                video_codec=self._selected_vcodec(), audio_codec=acodec, quality="high",
+                height=self.resolution_combo.currentData(), fps=self.fps_combo.currentData(),
+                audio_bitrate=self.vbitrate_combo.currentData() if acodec in LOSSY_IN_VIDEO else None,
+            )
+        choice = self.abitrate_combo.currentData()
+        if choice == COPY:
+            return ConvertSettings(audio_codec=COPY)
+        return ConvertSettings(audio_bitrate=choice if isinstance(choice, int) else None)
+
+    # ----- rebuilding options when the format changes ---------------------------------
+    def _on_kind_changed(self) -> None:
+        audio = self.is_audio_target()
+        self.format_stack.setCurrentIndex(1 if audio else 0)
+        self.settings_stack.setCurrentIndex(1 if audio else 0)
+        # A stacked widget is as tall as its tallest page; let only the visible page count.
+        for index in range(self.settings_stack.count()):
+            page = self.settings_stack.widget(index)
+            policy = QSizePolicy.Policy.Preferred if index == self.settings_stack.currentIndex() else QSizePolicy.Policy.Ignored
+            page.setSizePolicy(QSizePolicy.Policy.Preferred, policy)
+        self.settings_stack.adjustSize()
+        self.step3_title.setText("คุณภาพเสียง" if audio else "โค้ดเดก")
+        self._on_format_changed()
+
+    def _on_format_changed(self) -> None:
+        ext = self.target_ext()
+        if ext in VIDEO_TARGETS:
+            self._fill_video_codecs(ext)
+            self._fill_audio_codecs(ext)
+        else:
+            self._fill_audio_bitrates(ext)
+        self._refresh()
+
+    def _copy_reason(self, ext: str, settings: ConvertSettings) -> str:
+        return copy_problem(ext, settings, self._info) if self._info else ""
+
+    def _fill_video_codecs(self, ext: str) -> None:
+        previous = self._selected_vcodec()
+        self.vcodec_seg.clear()
+        first_enabled = None
+        for index, key in enumerate(VIDEO_CODECS_FOR[ext]):
+            label_text, encoder = VIDEO_CODECS[key]
+            button = self.vcodec_seg.add(label_text, index, tooltip=CODEC_TIPS.get(key, ""))
+            button.setProperty("codec", key)
+            reason = ""
+            if encoder and self._encoders and encoder not in self._encoders:
+                reason = f"FFmpeg ในเครื่องนี้ไม่มี {encoder}"
+            elif key == COPY:
+                reason = self._copy_reason(ext, ConvertSettings(video_codec=COPY))
+                if not reason and self._info and self._info.get("video") is None:
+                    reason = "ไฟล์นี้ไม่มีภาพ"
+            if reason:
+                button.setEnabled(False)
+                button.setToolTip(reason)
+            elif first_enabled is None:
+                first_enabled = button
+        keep = next((b for b in self.vcodec_seg.group.buttons()
+                     if b.property("codec") == previous and b.isEnabled()), None)
+        (keep or first_enabled or self.vcodec_seg.group.buttons()[0]).setChecked(True)
+        self.vcodec_seg.refresh_thumb()
+
+    def _fill_audio_codecs(self, ext: str) -> None:
+        previous = self.acodec_combo.currentData()
+        self.acodec_combo.blockSignals(True)
+        self.acodec_combo.clear()
+        for key in AUDIO_CODECS_FOR[ext]:
+            text = AUDIO_CODECS[key][0] if key != COPY else "คงเดิม (ไม่แปลงเสียง)"
+            self.acodec_combo.addItem(text, key)
+            blocked = key == COPY and (
+                self._copy_reason(ext, ConvertSettings(video_codec="h264", audio_codec=COPY))
+                or (self._info is not None and self._info.get("audio") is None))
+            if blocked:
+                self.acodec_combo.model().item(self.acodec_combo.count() - 1).setEnabled(False)
+        index = self.acodec_combo.findData(previous)
+        if index < 0 or not self.acodec_combo.model().item(index).isEnabled():
+            index = 0
+        self.acodec_combo.setCurrentIndex(index)
+        self.acodec_combo.blockSignals(False)
+
+    def _fill_audio_bitrates(self, ext: str) -> None:
+        previous = self.abitrate_combo.currentData()
+        self.abitrate_combo.blockSignals(True)
+        self.abitrate_combo.clear()
+        lossless = ext in LOSSLESS_AUDIO
+        if lossless:
+            self.abitrate_combo.addItem("Lossless · เต็มคุณภาพ", None)
+        else:
+            for kbps in AUDIO_BITRATES:
+                self.abitrate_combo.addItem(f"{kbps} kbps", kbps)
+            self.abitrate_combo.setCurrentIndex(self.abitrate_combo.findData(192))
+        can_copy = bool(self._info and self._info.get("audio")) and not self._copy_reason(
+            ext, ConvertSettings(audio_codec=COPY))
+        if can_copy:
+            self.abitrate_combo.addItem("คงเดิม (ไม่แปลงเสียง เร็วที่สุด)", COPY)
+        index = self.abitrate_combo.findData(previous)
+        if index >= 0:
+            self.abitrate_combo.setCurrentIndex(index)
+        self.abitrate_combo.blockSignals(False)
+        self.lossless_note.setText(
+            f"{FORMAT_LABELS[ext]} เก็บเสียงแบบไม่สูญเสียคุณภาพ ไม่ต้องเลือกบิตเรต" if lossless else "")
+        self.lossless_note.setVisible(lossless)
+
+    # ----- refresh --------------------------------------------------------------------
+    def _refresh(self, *_args: object) -> None:
+        ext = self.target_ext()
+        video_target = ext in VIDEO_TARGETS
+        settings = self.settings()
+        copy_video = video_target and settings.video_codec == COPY
+        self.video_tuning.setEnabled(not copy_video)
+        self.vbitrate_combo.setEnabled(video_target and settings.audio_codec in LOSSY_IN_VIDEO)
+        has_audio = self._info is None or self._info.get("audio") is not None
+        self.separator_row.setVisible(video_target and has_audio)
+        self.audio_format_combo.setEnabled(self.extract_switch.isChecked())
+        note = "คงเดิม: คัดลอกภาพเดิมโดยไม่เข้ารหัสใหม่ เร็วมากและไม่เสียคุณภาพ แต่ปรับคุณภาพหรือขนาดไม่ได้" if copy_video else ""
+        if self.copy_note.text() != note and note and self.isVisible():
+            fade_in(self.copy_note, 200)
+        self.copy_note.setText(note)
+        self.copy_note.setVisible(bool(note))
+
+        ready = self._input_path is not None and self._info is not None
+        self.start_button.setEnabled(ready)
+        self.name_field.set_extension(ext)
+        if self._input_path is None:
+            self.name_field.set_default("")
+            self.action_bar.set_summary("")
+            return
+        sidecar = self._sidecar_format()
+        suggested = suggest_output_path(self._input_path, ext, sidecar_ext=sidecar, taken=self._reserved)
+        self.name_field.set_default(suggested.stem)
+        self._refresh_hint()
+
+    def _refresh_hint(self) -> None:
+        if self._input_path is None:
+            return
+        ext = self.target_ext()
+        sidecar = self._sidecar_format()
+        self.action_bar.set_summary(
+            f"{describe_conversion(Path(self._input_path).suffix, ext, sidecar)} · "
+            f"{describe_settings(ext, self.settings())} → {self._output_path().name}")
+
+    def _output_path(self) -> Path:
+        """Where the result goes: the (edited) name beside the source, numbered if it is taken."""
+        ext = self.target_ext()
+        sidecar = self._sidecar_format()
+        folder = Path(self._input_path or ".").parent
+        stem = safe_filename(strip_extension(self.name_field.name(), ext)) or Path(self._input_path or "file").stem
+        count = 1
+        while True:
+            name = stem if count == 1 else f"{stem} ({count})"
+            candidate = folder / f"{name}.{ext}"
+            paths = [candidate] + ([audio_sidecar_path(candidate, sidecar)] if sidecar else [])
+            if not any(p.exists() or p in self._reserved for p in paths):
+                return candidate
+            count += 1
 
     def _sidecar_format(self) -> str | None:
-        if not self._extract_active():
+        if self.is_audio_target() or not self.extract_switch.isChecked() or not self.separator_row.isVisibleTo(self):
             return None
         return str(self.audio_format_combo.currentData() or "mp3")
 
-    def _refresh(self, *_args: object) -> None:
-        ext = self.target_ext()
-        is_video = ext in VIDEO_TARGETS
-        self.extract_switch.setEnabled(is_video)
-        self.audio_format_combo.setEnabled(is_video and self.extract_switch.isChecked())
-        self.separator_hint.setText(
-            "บันทึกเป็น MP3 / WAV — วิดีโอต้นฉบับไม่ถูกแก้ไข" if is_video else
-            "ใช้ได้เมื่อเลือกแปลงเป็นฟอร์แมตวิดีโอ"
-        )
-        ready = self._input_path is not None and self._ready
-        self.start_button.setEnabled(ready)
-        if self._input_path is None:
-            self.output_label.set_full_text("—")
-            self.hint_label.setText("")
-            return
-        sidecar = self._sidecar_format()
-        output = suggest_output_path(
-            self._input_path, ext, sidecar_ext=sidecar, taken=self._reserved
-        )
-        self.output_label.set_full_text(output.name)
-        self.hint_label.setText(
-            describe_conversion(Path(self._input_path).suffix, ext, sidecar)
-        )
-
-    def _set_notice(self, message: str, error: bool = False) -> None:
-        self.notice_label.setObjectName("ErrorText" if error else "NoticeText")
-        self.notice_label.style().unpolish(self.notice_label)
-        self.notice_label.style().polish(self.notice_label)
-        self.notice_label.set_full_text(message)
+    def _set_notice(self, message: str) -> None:
+        self.notice_label.setText(message)
         self.notice_label.setVisible(bool(message))
 
-    # ----- choosing a file ----------------------------------------------------------
-    def _browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "เลือกไฟล์วิดีโอหรือเสียง", self._last_dir, FILE_FILTERS
-        )
-        if path:
-            self.set_input_file(path)
-
-    def _on_file_dropped(self, path: str, count: int) -> None:
-        self.set_input_file(path)
-        if count > 1:
-            self._set_notice(f"รับครั้งละ 1 ไฟล์ — ใช้ไฟล์แรก ({Path(path).name})")
-
+    # ----- choosing a file ------------------------------------------------------------
     def set_input_file(self, path: str) -> None:
-        """Select the file to convert; size and duration are read in a QThread."""
+        """Select the file to convert; its details are read in a QThread."""
         self._set_notice("")
         self._input_path = path
-        self._ready = False
+        self._info = None
+        self.name_field.edited = False  # a new file gets a fresh suggested name
         self._last_dir = str(Path(path).parent)
         self._serial += 1
         self._reap_probes()
-        self.file_card.show()
+        self.dropzone.hide()
+        self.format_badge.setText(Path(path).suffix.lstrip(".").upper() or "?")
         self.file_name_label.set_full_text(Path(path).name)
-        self.file_meta_label.setText("กำลังอ่านข้อมูลไฟล์…")
-        self.file_size_label.setText("")
+        self.file_kind_label.set_full_text("กำลังอ่านข้อมูลไฟล์…")
+        for tile, value in self.tiles.values():
+            value.set_full_text("…")
+            tile.show()
+        self._layout_tiles(self._tile_columns)
         self.file_error_label.hide()
-        self.status_label.setText("")
+        if self.file_card.isHidden():
+            pop_in(self.file_card)
+        self._layout_tiles(4 if self.file_card.width() >= 600 else 2)
         probe = _ProbeThread(self._serial, path)
         probe.probed.connect(self._on_probed)
         probe.finished.connect(self._reap_probes)
@@ -480,21 +663,65 @@ class ConverterPage(QWidget):
         probe.start()
         self._refresh()
 
-    def _on_probed(self, serial: int, info: dict) -> None:
+    def _on_probed(self, serial: int, result: dict) -> None:
         if serial != self._serial:
             return  # the user picked another file meanwhile
-        if info.get("size") is not None:
-            self.file_size_label.setText(format_size(int(info["size"])))
-        error = info.get("error")
-        if error:
-            self._ready = False
-            self.file_meta_label.setText("ความยาว —")
-            self.file_error_label.set_full_text(str(error))
+        info, error = result.get("info"), result.get("error")
+        if error or not info:
+            self._info = None
+            self.file_kind_label.set_full_text("อ่านข้อมูลไม่ได้")
+            for tile, _value in self.tiles.values():
+                tile.hide()
+            self.file_error_label.setText(str(error))
             self.file_error_label.show()
+            self.options_card.hide()
+            self._refresh()
+            return
+        self._info = info
+        self._show_info(info)
+        has_video, has_audio = info["video"] is not None, info["audio"] is not None
+        self.video_button.setEnabled(has_video)
+        self.audio_button.setEnabled(has_audio)
+        if not has_video:
+            self.audio_button.setChecked(True)
+        elif not has_audio:
+            self.video_button.setChecked(True)
+        self.kind_seg.refresh_thumb()
+        self._on_kind_changed()
+        if self.options_card.isHidden():
+            pop_in(self.options_card, delay=140)  # settings rise in just after the file details
         else:
-            self._ready = True
-            self.file_meta_label.setText(f"ความยาว {format_duration(float(info['duration']))}")
-        self._refresh()
+            fade_in(self.options_card, 200)
+
+    def _show_info(self, info: dict[str, Any]) -> None:
+        video, audio = info["video"], info["audio"]
+        kind = "วิดีโอ" if video else "ไฟล์เสียง"
+        self.file_kind_label.set_full_text(f"{kind} · {info['format_long'] or info['format_name']}")
+        values = {
+            "duration": format_duration(info["duration"]) if info["duration"] else "—",
+            "size": format_size(info["size"]),
+            "bitrate": format_bitrate(info["bit_rate"]),
+        }
+        if video:
+            values["vcodec"] = codec_name(video["codec"], video["profile"])
+            values["resolution"] = f"{video['width']} × {video['height']}" if video["width"] else "—"
+            values["fps"] = f"{video['fps']:g} fps" if video["fps"] else "—"
+        if audio:
+            values["acodec"] = codec_name(audio["codec"])
+            details = []
+            if audio["sample_rate"]:
+                details.append(f"{audio['sample_rate'] / 1000:g} kHz")
+            if audio["channels"]:
+                details.append(CHANNELS.get(audio["channels"], f"{audio['channels']} ช่อง"))
+            if audio["bit_rate"]:
+                details.append(format_bitrate(audio["bit_rate"]))
+            values["audio"] = " · ".join(details) or "—"
+        for key, (tile, value) in self.tiles.items():
+            text = values.get(key)
+            tile.setVisible(text is not None)
+            if text is not None:
+                value.set_full_text(text)
+        self._layout_tiles(self._tile_columns)
 
     def _reap_probes(self) -> None:
         for probe in list(self._probes):
@@ -506,22 +733,20 @@ class ConverterPage(QWidget):
         for probe in list(self._probes):
             probe.wait(3000)
 
-    # ----- submit -------------------------------------------------------------------
+    # ----- submit ---------------------------------------------------------------------
     def build_task(self) -> ConverterTask | None:
         """Create the task for the current selection and reserve its output names."""
-        if self._input_path is None or not self._ready:
+        if self._input_path is None or self._info is None:
             return None
-        ext = self.target_ext()
         sidecar = self._sidecar_format()
-        output = suggest_output_path(
-            self._input_path, ext, sidecar_ext=sidecar, taken=self._reserved
-        )
+        output = self._output_path()
         self._reserved.add(output)
         if sidecar:
             self._reserved.add(audio_sidecar_path(output, sidecar))
         return ConverterTask(
             self._input_path, str(output),
             extract_audio=sidecar is not None, audio_format=sidecar or "mp3",
+            settings=self.settings(),
         )
 
     def _submit(self) -> None:
@@ -529,6 +754,5 @@ class ConverterPage(QWidget):
         if task is None:
             return
         self.task_submitted.emit(task)
-        self.status_label.setText(f"เพิ่มงานเข้าคิวแล้ว: {Path(task.output_path).name}")
-        self._status_timer.start(5000)
+        self.action_bar.flash(f"เพิ่มเข้าคิวแล้ว ✓ {Path(task.output_path).name}")
         self._refresh()  # the preview moves on to the next free name

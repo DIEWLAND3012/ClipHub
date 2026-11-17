@@ -18,7 +18,7 @@ from core.base_task import BaseMediaTask
 from core.task_queue import TaskQueue
 from ui import theme
 from ui.theme import repolish
-from ui.widgets import ElidedLabel, GlassCard, label
+from ui.widgets import ElidedLabel, GlassCard, animate_value, label
 
 Action = tuple[str, Callable[[], None]]
 
@@ -80,6 +80,7 @@ class ProgressPill(GlassCard):
         self.setObjectName("ProgressPill")
         self._cancel = cancel
         self._pending_count = pending_count
+        self._queue = queue
         self.task: BaseMediaTask | None = None
         self._shown = False
         self._anchor = QRect()
@@ -135,6 +136,13 @@ class ProgressPill(GlassCard):
         queue.task_added.connect(lambda _task: self._refresh_more())
         theme.on_change(self._refresh_icons)
 
+    clicked = None  # set by MainWindow: opens the queue
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API) - the pill opens the queue
+        if event.button() == Qt.MouseButton.LeftButton and callable(self.clicked):
+            self.clicked()
+        super().mousePressEvent(event)
+
     # --- geometry -----------------------------------------------------------
     def place(self, area: QRect) -> None:
         """Centre along the bottom of `area` (the content column, in parent coordinates)."""
@@ -153,6 +161,14 @@ class ProgressPill(GlassCard):
 
     # --- queue events -------------------------------------------------------
     def _on_started(self, task: BaseMediaTask) -> None:
+        self._show_task(task)  # the newest job takes the pill
+        if not self._shown:
+            self._shown = True
+            self.show()
+            self.raise_()
+            _slide(self, self._below(), self._home(), fade_in=True)
+
+    def _show_task(self, task: BaseMediaTask) -> None:
         self._hide_timer.stop()
         self.task = task
         self.title.set_full_text(getattr(task, "display_name", "") or task.title)
@@ -161,15 +177,11 @@ class ProgressPill(GlassCard):
         self.icon.setProperty("kind", getattr(task, "kind", ""))
         repolish(self.bar)
         repolish(self.icon)
-        self._set_percent(0)
+        self.bar.setValue(task.get_progress())
+        self.percent.setText(f"{task.get_progress()}%")
         self.cancel_button.setEnabled(True)
         self._refresh_icons()
         self._refresh_more()
-        if not self._shown:
-            self._shown = True
-            self.show()
-            self.raise_()
-            _slide(self, self._below(), self._home(), fade_in=True)
 
     def _on_progress(self, task: BaseMediaTask, percent: int, message: str) -> None:
         if task is not self.task:
@@ -179,9 +191,15 @@ class ProgressPill(GlassCard):
             self.status.set_full_text(message)
 
     def _on_ended(self, task: BaseMediaTask) -> None:
-        if task is self.task:
+        if task is not self.task:
             self._refresh_more()
-            self._hide_timer.start()
+            return
+        others = [t for t in self._queue.running_tasks() if t is not task]
+        if others:  # several jobs run at once: hand the pill to another running one
+            self._show_task(others[-1])
+            return
+        self._refresh_more()
+        self._hide_timer.start()
 
     def _maybe_hide(self) -> None:
         if not self._shown or (self.task is not None and self.task.status.value == "running"):
@@ -191,12 +209,12 @@ class ProgressPill(GlassCard):
         _slide(self, self._home(), self._below(), fade_in=False, duration=220, done=self.hide)
 
     def _set_percent(self, percent: int) -> None:
-        self.bar.setValue(percent)
+        animate_value(self.bar, percent)
         self.percent.setText(f"{percent}%")
 
     def _refresh_more(self) -> None:
         waiting = max(self._pending_count() - (1 if self.task is not None else 0), 0)
-        self.more.setText(f"+{waiting} รอคิว" if waiting else "")
+        self.more.setText(f"+{waiting} งาน" if waiting else "")
         self.more.setVisible(bool(waiting))
 
     def _on_cancel(self) -> None:
@@ -320,6 +338,10 @@ class ToastHost:
         _slide(toast, target - QPoint(0, 26), target, fade_in=True, duration=300)
         self._layout(animate=True, skip=toast)
         return toast
+
+    def raise_all(self) -> None:
+        for toast in reversed(self._toasts):
+            toast.raise_()
 
     def remove(self, toast: Toast) -> None:
         if toast not in self._toasts:

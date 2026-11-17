@@ -40,6 +40,14 @@ pip install -r requirements.txt
 python main.py
 ```
 
+ถ้ามีการ์ดจอ NVIDIA และอยากให้ซับไตเติล AI ทำงานบน GPU (เร็วขึ้นราว 2.5 เท่า) ให้ติดตั้งไลบรารี CUDA เพิ่ม (ประมาณ 2 GB ไม่ติดตั้งก็ใช้งานได้ แอปจะใช้ CPU แทน):
+
+```bash
+pip install -r requirements-gpu.txt
+```
+
+การแปลงและบีบอัดวิดีโอใช้ GPU ให้อัตโนมัติ (NVIDIA NVENC, Intel Quick Sync, AMD AMF, Apple VideoToolbox) ดูอุปกรณ์ที่แอปพบได้ที่ปุ่ม **ประสิทธิภาพ** ในแถบด้านซ้าย การ์ด NVIDIA ต้องใช้ไดรเวอร์ที่รองรับ FFmpeg รุ่นที่ติดตั้ง
+
 ## สร้างไฟล์ติดตั้งเอง
 
 ```bash

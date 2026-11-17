@@ -1,6 +1,7 @@
 """Feature 4: speech-to-text and subtitle engine (owner: member 4)."""
 from __future__ import annotations
 
+import itertools
 import math
 import os
 import tempfile
@@ -127,6 +128,7 @@ class SubtitleTask(BaseMediaTask):
         self.model_size = model_size
         self.write_file = write_file
         self.cues: tuple[Cue, ...] = ()
+        self.device_label = "CPU"
 
     def summary(self) -> str:
         return f"{LANGUAGE_NAMES.get(self.language, self.language)} · {self.model_size}"
@@ -160,16 +162,22 @@ class SubtitleTask(BaseMediaTask):
         self.check_cancelled()
 
         self.report_progress(EXTRACT_END, "กำลังโหลดโมเดล AI (ครั้งแรกต้องดาวน์โหลดจากอินเทอร์เน็ต)")
-        try:
-            model = whisper_model(self.model_size, device="cpu", compute_type="int8")
-        except Exception as exc:
-            raise ToolFailedError(
-                f"โหลดโมเดล AI ({self.model_size}) ไม่สำเร็จ "
-                f"หากใช้งานครั้งแรกกรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต: {exc}"
-            ) from exc
+        model, where = self._load_model(whisper_model)
         self.check_cancelled()
 
-        segments, _info = model.transcribe(str(wav), language=self.language, vad_filter=True)
+        try:
+            segments, _info = model.transcribe(str(wav), language=self.language, vad_filter=True)
+            segments = iter(segments)
+            first = next(segments, None)  # CUDA libraries fail here, not when the model loads
+        except RuntimeError:
+            if where == "CPU":
+                raise
+            model, where = self._load_model(whisper_model, force_cpu=True)
+            segments, _info = model.transcribe(str(wav), language=self.language, vad_filter=True)
+            segments = iter(segments)
+            first = next(segments, None)
+        self.device_label = where
+        segments = itertools.chain([first] if first is not None else [], segments)
         cues: list[Cue] = []
         for segment in segments:
             self.check_cancelled()
@@ -179,7 +187,7 @@ class SubtitleTask(BaseMediaTask):
             done = min(float(segment.end) / duration, 1.0)
             self.report_progress(
                 EXTRACT_END + (TRANSCRIBE_END - EXTRACT_END) * done,
-                f"กำลังถอดเสียง · {len(cues)} ประโยค",
+                f"กำลังถอดเสียง ({self.device_label}) · {len(cues)} ประโยค",
             )
         self.check_cancelled()
 
@@ -188,6 +196,28 @@ class SubtitleTask(BaseMediaTask):
             self.report_progress(TRANSCRIBE_END, "กำลังบันทึกไฟล์ซับไตเติล")
             write_subtitles(self.cues, self.output_path)
         return Path(self.output_path)
+
+    def resource(self) -> str | None:
+        return "whisper"  # one speech model at a time: it already uses the whole CPU or GPU
+
+    def _load_model(self, whisper_model, force_cpu: bool = False):
+        """CUDA (float16) when the GPU and its libraries are usable, else int8 on every CPU core."""
+        from core import hwaccel
+        attempts = []
+        if not force_cpu and hwaccel.report().whisper_gpu:
+            attempts.append(({"device": "cuda", "compute_type": "float16"}, "GPU"))
+        attempts.append(({"device": "cpu", "compute_type": "int8", "cpu_threads": os.cpu_count() or 4},
+                         f"CPU {os.cpu_count() or 4} เธรด"))
+        last_error: Exception | None = None
+        for kwargs, where in attempts:
+            try:
+                return whisper_model(self.model_size, **kwargs), where
+            except Exception as exc:  # e.g. CUDA libraries missing: try the next device
+                last_error = exc
+        raise ToolFailedError(
+            f"โหลดโมเดล AI ({self.model_size}) ไม่สำเร็จ "
+            f"หากใช้งานครั้งแรกกรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต: {last_error}"
+        ) from last_error
 
     def _temp_wav(self) -> Path:
         fd, name = tempfile.mkstemp(prefix="cliphub_", suffix=".wav")

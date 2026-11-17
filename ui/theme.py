@@ -198,7 +198,19 @@ QLabel#NavLabel { color: $text3; font-size: 11px; font-weight: 600; padding: 4px
 QPushButton[nav="true"] { text-align: left; padding: 9px 12px; border: none; border-radius: 10px;
   background: transparent; color: $text; font-size: 14px; font-weight: 500; }
 QPushButton[nav="true"]:hover { background: $nav_hover; }
-QPushButton[nav="true"]:checked { background: $accent_soft; color: $text; font-weight: 600; }
+QPushButton[nav="true"]:checked { background: transparent; color: $text; font-weight: 600; }
+QPushButton[nav="true"]:checked:hover { background: transparent; }
+QPushButton[nav="true"][compact="true"] { text-align: center; padding: 10px 0; }
+
+QLabel#NavBadge { background: $accent; color: #ffffff; border-radius: 9px;
+  padding: 0 6px; font-size: 11px; font-weight: 700; }
+QLabel#NavBadge[compact="true"] { border-radius: 7px; padding: 0 4px; font-size: 9px; }
+/* responsive queue drawer */
+QWidget#Scrim { background: $scrim; }
+QPushButton#QueueToggle { border-radius: 19px; min-height: 38px; max-height: 38px; padding: 0 16px 0 12px;
+  font-size: 13px; font-weight: 600; background: $float_top; border: 1px solid $ghost_border; border-top-color: $btn_rim; }
+QPushButton#QueueToggle:hover { background: $ghost_hover; }
+QPushButton#QueueToggle[busy="true"] { color: $accent; }
 
 /* page chrome */
 QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }
@@ -238,7 +250,9 @@ QComboBoxPrivateContainer { background: transparent; border: none; }
 QComboBox QAbstractItemView { background: $popup; color: $text; border: 1px solid $separator; border-radius: ${r}px;
   padding: 5px; outline: 0; selection-background-color: $accent; selection-color: #ffffff; }
 QComboBox QAbstractItemView::item { padding: 4px 10px; min-height: 26px; border-radius: 7px; }
-QComboBox QAbstractItemView::item:disabled { color: $text3; font-size: 11px; font-weight: 600; }
+QComboBox QAbstractItemView::item:hover { background: $accent_soft; color: $text; }
+QComboBox QAbstractItemView::item:selected { background: $accent; color: #ffffff; }
+QComboBox QAbstractItemView::item:disabled { color: $text3; background: transparent; }
 
 /* buttons: plain QPushButton is the glass capsule; PrimaryButton is the filled accent capsule */
 QPushButton { color: $text; border-radius: 18px; padding: 8px 18px; font-size: 13px; font-weight: 500; min-height: 20px;
@@ -270,7 +284,8 @@ QFrame#Poster { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 $post
 QLabel#PosterPlay { background: rgba(255, 255, 255, 220); border-radius: 23px; }
 QLabel#PosterDuration { background: rgba(0, 0, 0, 150); color: #ffffff; font-size: 11px;
   padding: 2px 7px; border-radius: 6px; }
-QLabel#MetaTitle { font-size: 17px; font-weight: 600; }
+QLabel#StepNumber { background: $accent_soft; color: $accent; border-radius: 10px; font-size: 11px; font-weight: 700; }
+QLabel#MetaTitle { font-size: 15px; font-weight: 600; }
 QLabel#MetaRow { color: $text2; font-size: 13px; }
 
 /* converter */
@@ -279,11 +294,19 @@ QFrame#DropZone:hover, QFrame#DropZone[drag="true"] { border-color: $accent; bac
 QLabel#DzIcon { background: $accent_soft; border-radius: 18px; }
 QLabel#DzTitle { font-size: 17px; font-weight: 600; }
 QLabel#DzSub { color: $text3; font-size: 13px; }
+QLabel#FormatBadge { color: $accent; background: $accent_soft; border: 1px solid $accent_line; border-radius: 18px;
+  font-size: 26px; font-weight: 800; padding: 0 16px; }
+QLabel#FileTitle { font-size: 16px; font-weight: 700; }
+QFrame#InfoTile { background: $fill; border: none; border-radius: 12px; }
+QLabel#InfoKey { color: $text3; font-size: 11px; font-weight: 600; }
+QLabel#InfoValue { font-size: 13px; font-weight: 600; }
 QLabel#ToggleTitle { font-size: 14px; font-weight: 600; }
 
 /* compressor */
 QFrame#Control { background: $fill; border: 1px solid $field_border; border-radius: ${r}px; }
 QFrame#Control[active="true"] { border: 1px solid $accent; }
+QLineEdit#NameEdit { background: transparent; border: none; padding: 0; min-height: 0; font-size: 14px; }
+QLineEdit#NameEdit:hover, QLineEdit#NameEdit:focus { background: transparent; border: none; }
 QLineEdit#KbpsEdit { background: transparent; border: none; padding: 0; min-height: 0; }
 QLabel#Unit { color: $text3; font-size: 13px; }
 QLabel#BarLabel { color: $text2; font-size: 13px; }
@@ -361,6 +384,12 @@ QPushButton#ToastAction { padding: 5px 14px; min-height: 0; border-radius: 13px;
   color: $accent; background: $accent_soft; border: none; }
 QPushButton#ToastAction:hover { background: $accent_line; color: $on_accent; }
 
+/* performance panel */
+QLabel#StatusDot { border-radius: 5px; background: $text3; }
+QLabel#StatusDot[state="ok"] { background: $ok; }
+QLabel#StatusDot[state="warn"] { background: $warn; }
+QWidget#InfoTile { background: $fill; border-radius: 12px; }
+
 /* appearance switcher */
 QLabel#AppearanceLabel { color: $text3; font-size: 11px; font-weight: 600; padding: 0 4px; }
 
@@ -391,6 +420,7 @@ def _build_stylesheet(t: dict[str, object]) -> str:
         control_h=str(CONTROL_HEIGHT),
         job_icon_rules="\n".join(icon_rules), job_bar_rules="\n".join(bar_rules),
         poster_a="#2b3a55" if dark else "#c9dcf7", poster_b="#1a1a22" if dark else "#e9e3f7",
+        scrim=css(rgba("#000000", 0.34) if dark else rgba("#1c2440", 0.18)),
         btn_rim=css(rgba("#ffffff", 0.22) if dark else rgba("#ffffff", 1.0)),
         accent_top=QColor(t["accent"]).lighter(118).name(),  # type: ignore[arg-type]
         accent_bottom=QColor(t["accent"]).darker(108).name(),  # type: ignore[arg-type]
@@ -425,6 +455,8 @@ _ICONS = {
     "film": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z" fill="currentColor" stroke="none"/>',
     "music": '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
     "sparkles": '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+    "chip": '<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/>'
+            '<path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
     "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4'
            'M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>',
     "moon": '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>',

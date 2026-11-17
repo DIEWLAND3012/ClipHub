@@ -11,9 +11,16 @@ from unittest.mock import patch
 from core.base_task import TaskStatus
 from core.errors import InputError, TaskCancelledError, ToolFailedError
 from tasks.downloader import (
+    AUDIO_BITRATES,
+    AUDIO_FORMATS,
     QUALITIES,
+    VIDEO_FORMATS,
     DownloaderTask,
+    audio_postprocessor,
     build_format_selector,
+    describe_choice,
+    needs_mov_transcode,
+    suggest_file_name,
     fetch_metadata,
     format_duration,
     is_valid_youtube_url,
@@ -110,7 +117,7 @@ class UrlValidationTests(unittest.TestCase):
 class FormatSelectorTests(unittest.TestCase):
     def test_every_video_quality(self) -> None:
         for quality in QUALITIES:
-            if quality == "best":
+            if quality == "source":
                 continue
             height = quality[:-1]
             with self.subTest(quality=quality):
@@ -121,6 +128,72 @@ class FormatSelectorTests(unittest.TestCase):
 
     def test_best(self) -> None:
         self.assertEqual(build_format_selector("best", False), "bestvideo+bestaudio/best")
+        self.assertEqual(build_format_selector("source", False, "mkv"), "bestvideo+bestaudio/best")
+
+    def test_quality_range_is_144p_to_4k_plus_source(self) -> None:
+        self.assertEqual(QUALITIES[0], "144p")
+        self.assertIn("2160p", QUALITIES)
+        self.assertEqual(QUALITIES[-1], "source")
+
+    def test_webm_avoids_h264_and_aac(self) -> None:
+        selector = build_format_selector("720p", False, "webm")
+        self.assertTrue(selector.startswith("bestvideo[height<=720][vcodec!^=avc1]+bestaudio[acodec^=opus]"))
+
+    def test_every_container_is_accepted(self) -> None:
+        for fmt in VIDEO_FORMATS:
+            with self.subTest(fmt=fmt):
+                self.assertIn("bestvideo", build_format_selector("1080p", False, fmt))
+        for fmt in AUDIO_FORMATS:
+            with self.subTest(fmt=fmt):
+                self.assertIn("bestaudio", build_format_selector("1080p", True, fmt, "320"))
+
+    def test_unknown_format_or_bitrate_is_input_error(self) -> None:
+        for args in (("1080p", False, "avi"), ("1080p", True, "wma"), ("1080p", True, "mp3", "999")):
+            with self.subTest(args=args), self.assertRaises(InputError):
+                build_format_selector(*args)
+
+    def test_audio_bitrate_forces_a_real_encode(self) -> None:
+        # keeping the source copies the matching codec; a bitrate starts from the other codec
+        self.assertTrue(build_format_selector("", True, "m4a", "source").startswith("bestaudio[ext=m4a]"))
+        self.assertTrue(build_format_selector("", True, "m4a", "128").startswith("bestaudio[acodec^=opus]"))
+        self.assertTrue(build_format_selector("", True, "opus", "source").startswith("bestaudio[acodec^=opus]"))
+        self.assertTrue(build_format_selector("", True, "opus", "96").startswith("bestaudio[ext=m4a]"))
+
+
+class AudioPostprocessorTests(unittest.TestCase):
+    def test_bitrates(self) -> None:
+        for kbps in AUDIO_BITRATES:
+            with self.subTest(kbps=kbps):
+                self.assertEqual(audio_postprocessor("mp3", kbps),
+                                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": kbps})
+
+    def test_source(self) -> None:
+        self.assertEqual(audio_postprocessor("mp3", "source")["preferredquality"], "0")  # best VBR
+        self.assertNotIn("preferredquality", audio_postprocessor("m4a", "source"))       # copy as-is
+
+    def test_lossless_ignores_bitrate(self) -> None:
+        for fmt in ("wav", "flac"):
+            with self.subTest(fmt=fmt):
+                self.assertEqual(audio_postprocessor(fmt, "128"), {"key": "FFmpegExtractAudio", "preferredcodec": fmt})
+
+    def test_describe_choice(self) -> None:
+        self.assertEqual(describe_choice(False, "mov", "2160p", "320"), "2160p · MOV")
+        self.assertEqual(describe_choice(False, "mkv", "source", "320"), "ต้นฉบับ · MKV")
+        self.assertEqual(describe_choice(True, "m4a", "1080p", "256"), "256 kbps · M4A")
+        self.assertEqual(describe_choice(True, "mp3", "1080p", "source"), "ต้นฉบับ · MP3")
+        self.assertEqual(describe_choice(True, "wav", "1080p", "320"), "Lossless · WAV")
+
+    def test_suggest_file_name(self) -> None:
+        self.assertEqual(suggest_file_name("Me at the zoo", False, "720p"), "Me at the zoo 720p")
+        self.assertEqual(suggest_file_name("Me at the zoo", False, "source", [144, 240]), "Me at the zoo 240p")
+        self.assertEqual(suggest_file_name("a/b: c?", True, "720p"), "a b c")
+        self.assertEqual(suggest_file_name("", True, "720p"), "ClipHUB")
+
+    def test_mov_transcode_rule(self) -> None:
+        self.assertFalse(needs_mov_transcode("h264", "aac"))
+        self.assertTrue(needs_mov_transcode("vp9", "opus"))
+        self.assertTrue(needs_mov_transcode("av1", "aac"))
+        self.assertTrue(needs_mov_transcode("h264", "opus"))
 
     def test_audio_only_ignores_quality(self) -> None:
         for quality in QUALITIES:
@@ -209,6 +282,12 @@ class DownloaderTaskTests(unittest.TestCase):
         with self.assertRaises(InputError):
             DownloaderTask(URL, "/tmp/out", quality="999p").validate()
 
+    def test_validate_rejects_bad_format(self) -> None:
+        with self.assertRaises(InputError):
+            DownloaderTask(URL, "/tmp/out", file_format="avi").validate()
+        with self.assertRaises(InputError):
+            DownloaderTask(URL, "/tmp/out", audio_only=True, file_format="mp3", audio_bitrate="1000").validate()
+
     def test_validate_accepts_good_input_without_local_file(self) -> None:
         DownloaderTask(URL, "/tmp/out", quality="720p").validate()
         DownloaderTask(f"youtu.be/{VIDEO_ID}", "/tmp/out", audio_only=True).validate()
@@ -222,8 +301,9 @@ class DownloaderTaskTests(unittest.TestCase):
     def test_summary(self) -> None:
         self.assertEqual(DownloaderTask(URL, "/o").summary(), "1080p · MP4")
         self.assertEqual(DownloaderTask(URL, "/o", quality="360p").summary(), "360p · MP4")
-        self.assertEqual(DownloaderTask(URL, "/o", quality="best").summary(), "สูงสุด · MP4")
-        self.assertEqual(DownloaderTask(URL, "/o", audio_only=True).summary(), "เสียง · MP3")
+        self.assertEqual(DownloaderTask(URL, "/o", quality="source", file_format="mov").summary(), "ต้นฉบับ · MOV")
+        self.assertEqual(DownloaderTask(URL, "/o", audio_only=True).summary(), "320 kbps · MP3")
+        self.assertEqual(DownloaderTask(URL, "/o", audio_only=True, file_format="flac").summary(), "Lossless · FLAC")
 
     def test_class_contract(self) -> None:
         task = DownloaderTask(URL, "/o")
@@ -308,6 +388,85 @@ class DownloaderProcessTests(unittest.TestCase):
         self.assertEqual(options["postprocessors"][0]["preferredcodec"], "mp3")
         self.assertEqual(result.suffix, ".mp3")
         self.assertEqual(FakeYDL.instances[0].url, f"https://youtu.be/{VIDEO_ID}")
+
+    def test_audio_format_and_bitrate_reach_yt_dlp(self) -> None:
+        FakeYDL.behaviour = self._download_script(ext="m4a")
+        task = DownloaderTask(URL, str(self.out_dir), audio_only=True, file_format="m4a", audio_bitrate="128")
+        with fake_yt_dlp(FakeYDL):
+            result = task.run()
+        options = FakeYDL.instances[0].options
+        self.assertEqual(options["postprocessors"][0], {"key": "FFmpegExtractAudio", "preferredcodec": "m4a",
+                                                        "preferredquality": "128"})
+        self.assertEqual(result.suffix, ".m4a")
+
+    def test_video_container_reaches_yt_dlp(self) -> None:
+        FakeYDL.behaviour = self._download_script(ext="webm")
+        with fake_yt_dlp(FakeYDL):
+            DownloaderTask(URL, str(self.out_dir), quality="source", file_format="webm").run()
+        options = FakeYDL.instances[0].options
+        self.assertEqual(options["merge_output_format"], "webm")
+        self.assertEqual(options["format_sort"][1], "vcodec:vp9")
+
+    def _mov_patches(self, codecs, calls):
+        def fake_run(args, *, duration, on_progress=None, is_cancelled=lambda: False):
+            if on_progress is not None:
+                on_progress(0.5)
+            Path(args[-1]).write_bytes(b"mov")  # the .part file
+            calls.append(list(args))
+
+        return (
+            patch("tasks.downloader.probe_codecs", return_value=codecs),
+            patch("tasks.downloader.probe_duration", return_value=10.0),
+            patch("tasks.downloader.run_ffmpeg", side_effect=fake_run),
+        )
+
+    def test_mov_is_built_from_an_mkv_in_the_temp_dir(self) -> None:
+        FakeYDL.behaviour = self._download_script(ext="mkv")
+        calls: list[list[str]] = []
+        task = DownloaderTask(URL, str(self.out_dir), quality="2160p", file_format="mov")
+        percents: list[int] = []
+        task.set_progress_callback(lambda percent, _message: percents.append(percent))
+        codecs, duration, run = self._mov_patches(("vp9", "opus"), calls)
+        with fake_yt_dlp(FakeYDL), codecs, duration, run:
+            result = task.run()
+        options = FakeYDL.instances[0].options
+        self.assertEqual(options["merge_output_format"], "mkv")
+        self.assertNotEqual(options["paths"]["home"], str(self.out_dir))  # the mkv never lands in the folder
+        self.assertEqual(result, self.out_dir / f"clip [{VIDEO_ID}].mov")
+        self.assertIn("libx264", calls[0])  # VP9 cannot go into MOV, so it is re-encoded
+        self.assertEqual([p.name for p in self.out_dir.iterdir()], [result.name])
+        self.assertEqual(percents, sorted(percents))
+
+    def test_mov_copies_h264(self) -> None:
+        FakeYDL.behaviour = self._download_script(ext="mkv")
+        calls: list[list[str]] = []
+        codecs, duration, run = self._mov_patches(("h264", "aac"), calls)
+        with fake_yt_dlp(FakeYDL), codecs, duration, run:
+            DownloaderTask(URL, str(self.out_dir), quality="720p", file_format="mov").run()
+        self.assertIn("copy", calls[0])
+        self.assertNotIn("libx264", calls[0])
+
+    def _named_script(self):
+        def script(ydl: FakeYDL, url: str, download: bool) -> dict:
+            home = Path(ydl.options["paths"]["home"])
+            final = home / ydl.options["outtmpl"].replace("%(ext)s", "mp4").replace("%%", "%")
+            final.write_bytes(b"video")
+            return {"requested_downloads": [{"filepath": str(final)}]}
+
+        return staticmethod(script)
+
+    def test_custom_file_name_is_used_and_never_overwrites(self) -> None:
+        FakeYDL.behaviour = self._named_script()
+        with fake_yt_dlp(FakeYDL):
+            first = DownloaderTask(URL, str(self.out_dir), file_name="วันหยุด: 100% สนุก.mp4").run()
+            second = DownloaderTask(URL, str(self.out_dir), file_name="วันหยุด: 100% สนุก").run()
+        self.assertEqual(first.name, "วันหยุด 100% สนุก.mp4")
+        self.assertEqual(second.name, "วันหยุด 100% สนุก (2).mp4")
+        self.assertEqual(FakeYDL.instances[0].options["outtmpl"], "วันหยุด 100%% สนุก.%(ext)s")
+
+    def test_invalid_file_name_is_rejected(self) -> None:
+        with self.assertRaises(InputError):
+            DownloaderTask(URL, "/tmp/out", file_name=" /// ").validate()
 
     def test_download_error_becomes_tool_failed_error(self) -> None:
         def boom(ydl, url, download):

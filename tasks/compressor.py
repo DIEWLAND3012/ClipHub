@@ -10,6 +10,7 @@ from typing import ClassVar
 from core.base_task import BaseMediaTask
 from core.errors import InputError, ToolFailedError
 from core.ffmpeg import probe_format, run_ffmpeg
+from core.hwaccel import Engine, encoder_args
 
 # --- bitrate math (SRS 3.3.1, 3.3.2.1) ---------------------------------------
 
@@ -69,15 +70,19 @@ def format_size(num_bytes: float) -> str:
 
 
 def build_compress_args(
-    input_path: str, partial_path: str, video_kbps: int, audio_kbps: int
+    input_path: str, partial_path: str, video_kbps: int, audio_kbps: int, engine: Engine | None = None,
 ) -> list[str]:
     """Arguments for core.ffmpeg.run_ffmpeg. The partial path must stay the last item."""
+    if engine is not None and engine.is_gpu and "h264" in engine.codecs:
+        video = encoder_args(engine, "h264", video_kbps)  # the GPU encodes to the same target bitrate
+    else:
+        video = ["-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                 "-b:v", f"{video_kbps}k", "-maxrate", f"{video_kbps}k", "-bufsize", f"{video_kbps * 2}k"]
     return [
         "-i", input_path,
         "-map", "0:v:0", "-map", "0:a:0?",  # first video, optional first audio; skips subtitles
         "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",  # yuv420p needs even dimensions
-        "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
-        "-b:v", f"{video_kbps}k", "-maxrate", f"{video_kbps}k", "-bufsize", f"{video_kbps * 2}k",
+        *video,
         "-c:a", "aac", "-b:a", f"{audio_kbps}k",
         "-movflags", "+faststart",
         "-f", "mp4",
@@ -139,6 +144,7 @@ class CompressTask(BaseMediaTask):
         self.mode = mode
         self.target_kbps = target_kbps
         self.result: CompressReport | None = None  # set after a successful run
+        self.display_name = Path(input_path).name  # shown on the queue card
 
     def summary(self) -> str:
         if self.mode == CUSTOM_MODE:
@@ -147,6 +153,9 @@ class CompressTask(BaseMediaTask):
         if self.mode in PRESETS:
             return f"{label} · −{round(PRESETS[self.mode] * 100)}%"
         return label
+
+    def resource(self) -> str | None:
+        return "h264"
 
     def validate(self) -> None:
         super().validate()
@@ -177,12 +186,22 @@ class CompressTask(BaseMediaTask):
         video_kbps, audio_kbps = split_bitrate(total)
 
         partial = self.partial_output()
-        run_ffmpeg(
-            build_compress_args(self.input_path, str(partial), video_kbps, audio_kbps),
-            duration=duration,
-            on_progress=lambda fraction: self.report_progress(fraction * 100, "กำลังบีบอัด"),
-            is_cancelled=self._cancel_event.is_set,
-        )
+
+        def encode(engine: Engine | None, message: str) -> None:
+            run_ffmpeg(
+                build_compress_args(self.input_path, str(partial), video_kbps, audio_kbps, engine),
+                duration=duration,
+                on_progress=lambda fraction: self.report_progress(fraction * 100, message),
+                is_cancelled=self._cancel_event.is_set,
+            )
+
+        try:
+            encode(self.engine, "กำลังบีบอัด" + self.engine_note())
+        except ToolFailedError:
+            if self.engine is None or not self.engine.is_gpu or self._cancel_event.is_set():
+                raise
+            self.engine = None  # the GPU refused this file: fall back to the CPU
+            encode(None, "กำลังบีบอัด · GPU ใช้ไม่ได้ ใช้ CPU แทน")
         self.check_cancelled()
 
         final = Path(self.output_path)

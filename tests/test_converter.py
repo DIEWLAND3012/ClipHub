@@ -12,8 +12,9 @@ from core.base_task import TaskStatus
 from core.errors import InputError, TaskCancelledError, ToolFailedError
 from tasks import converter
 from tasks.converter import (
-    ConverterTask, audio_sidecar_path, build_convert_args, build_extract_args,
-    describe_conversion, suggest_output_path,
+    AUDIO_CODECS_FOR, VIDEO_CODECS_FOR, ConverterTask, ConvertSettings, audio_sidecar_path,
+    build_convert_args, build_extract_args, check_settings, copy_problem, describe_conversion,
+    describe_settings, suggest_output_path,
 )
 
 
@@ -77,9 +78,103 @@ class BuildConvertArgsTests(unittest.TestCase):
             build_convert_args("a", "b", "xyz")
         self.assertEqual(str(ctx.exception), "รูปแบบ .xyz ไม่รองรับ")
 
-    def test_webm_is_input_only(self) -> None:
+    def test_webm_target_uses_vp9_and_opus(self) -> None:
+        args = build_convert_args("in.mp4", "out.part", "webm")
+        opts = pairs(args)
+        self.assertEqual(opts["-c:v"], "libvpx-vp9")
+        self.assertEqual(opts["-c:a"], "libopus")
+        self.assertEqual(args[-3:], ["-f", "webm", "out.part"])
+
+    def test_new_audio_targets(self) -> None:
+        m4a = build_convert_args("in.mp4", "out.part", "m4a")
+        self.assertEqual(pairs(m4a)["-c:a"], "aac")
+        self.assertEqual(m4a[-3:-1], ["-f", "ipod"])
+        opus = build_convert_args("in.mp4", "out.part", "opus")
+        self.assertEqual(pairs(opus)["-c:a"], "libopus")
+        self.assertEqual(opus[-3:-1], ["-f", "ogg"])
+
+
+class SettingsTests(unittest.TestCase):
+    def test_codec_encoders_and_quality(self) -> None:
+        cases = {
+            ("mp4", "h265"): ("libx265", "-crf", "23"),
+            ("mkv", "av1"): ("libsvtav1", "-crf", "32"),
+            ("mkv", "vp9"): ("libvpx-vp9", "-crf", "31"),
+            ("mov", "prores"): ("prores_ks", "-profile:v", "2"),
+            ("mp4", "h264"): ("libx264", "-crf", "20"),
+        }
+        for (ext, codec), (encoder, key, value) in cases.items():
+            with self.subTest(ext=ext, codec=codec):
+                opts = pairs(build_convert_args("in.mkv", "o.part", ext, ConvertSettings(video_codec=codec)))
+                self.assertEqual(opts["-c:v"], encoder)
+                self.assertEqual(opts[key], value)
+
+    def test_quality_levels_move_crf(self) -> None:
+        crf = {q: pairs(build_convert_args("i", "o", "mp4", ConvertSettings(video_codec="h264", quality=q)))["-crf"]
+               for q in ("high", "balanced", "small")}
+        self.assertLess(int(crf["high"]), int(crf["balanced"]))
+        self.assertLess(int(crf["balanced"]), int(crf["small"]))
+
+    def test_hevc_gets_apple_tag_in_mp4_and_mov(self) -> None:
+        for ext in ("mp4", "mov"):
+            with self.subTest(ext=ext):
+                self.assertEqual(pairs(build_convert_args("i", "o", ext, ConvertSettings(video_codec="h265")))["-tag:v"], "hvc1")
+        self.assertNotIn("-tag:v", build_convert_args("i", "o", "mkv", ConvertSettings(video_codec="h265")))
+
+    def test_resolution_only_downscales_and_fps(self) -> None:
+        opts = pairs(build_convert_args("i", "o", "mp4", ConvertSettings(height=720, fps=30)))
+        self.assertIn("min(720,ih)", opts["-vf"])
+        self.assertEqual(opts["-r"], "30")
+
+    def test_copy_skips_filters(self) -> None:
+        args = build_convert_args("i", "o", "mkv", ConvertSettings(video_codec="copy", audio_codec="copy"))
+        opts = pairs(args)
+        self.assertEqual((opts["-c:v"], opts["-c:a"]), ("copy", "copy"))
+        self.assertNotIn("-vf", args)
+        self.assertNotIn("-crf", args)
+
+    def test_copy_hevc_into_mp4_is_tagged(self) -> None:
+        args = build_convert_args("i", "o", "mp4", ConvertSettings(video_codec="copy"), source_video_codec="hevc")
+        self.assertEqual(pairs(args)["-tag:v"], "hvc1")
+
+    def test_audio_codec_and_bitrate_in_video_target(self) -> None:
+        opts = pairs(build_convert_args("i", "o", "mkv", ConvertSettings(audio_codec="opus", audio_bitrate=128)))
+        self.assertEqual((opts["-c:a"], opts["-b:a"]), ("libopus", "128k"))
+
+    def test_audio_target_bitrate_and_lossless(self) -> None:
+        mp3 = pairs(build_convert_args("i", "o", "mp3", ConvertSettings(audio_bitrate=320)))
+        self.assertEqual((mp3["-c:a"], mp3["-b:a"]), ("libmp3lame", "320k"))
+        flac = build_convert_args("i", "o", "flac", ConvertSettings(audio_bitrate=320))
+        self.assertNotIn("-b:a", flac)  # lossless ignores bitrate
+        copy = pairs(build_convert_args("i", "o", "m4a", ConvertSettings(audio_codec="copy")))
+        self.assertEqual(copy["-c:a"], "copy")
+
+    def test_container_codec_rules(self) -> None:
+        check_settings("mov", ConvertSettings(video_codec="prores"))
         with self.assertRaises(InputError):
-            build_convert_args("a", "b", "webm")
+            check_settings("webm", ConvertSettings(video_codec="h264"))
+        with self.assertRaises(InputError):
+            check_settings("mp4", ConvertSettings(audio_codec="opus"))
+        with self.assertRaises(InputError):
+            check_settings("mp4", ConvertSettings(quality="ultra"))
+        for ext in VIDEO_CODECS_FOR:
+            with self.subTest(ext=ext):
+                check_settings(ext, ConvertSettings())  # every container has working defaults
+                self.assertIn(ext, AUDIO_CODECS_FOR)
+
+    def test_copy_problem(self) -> None:
+        vp9 = {"video": {"codec": "vp9"}, "audio": {"codec": "opus"}}
+        self.assertIn("VP9", copy_problem("mp4", ConvertSettings(video_codec="copy"), vp9))
+        self.assertEqual(copy_problem("mkv", ConvertSettings(video_codec="copy", audio_codec="copy"), vp9), "")
+        self.assertIn("OPUS", copy_problem("m4a", ConvertSettings(audio_codec="copy"), vp9))
+        h264 = {"video": {"codec": "h264"}, "audio": {"codec": "aac"}}
+        self.assertEqual(copy_problem("mp4", ConvertSettings(video_codec="copy", audio_codec="copy"), h264), "")
+
+    def test_describe_settings(self) -> None:
+        self.assertEqual(describe_settings("mp4", ConvertSettings(video_codec="h265", height=1080)), "H.265 · 1080p")
+        self.assertEqual(describe_settings("mkv", ConvertSettings(video_codec="copy")), "คงเดิม (ไม่เข้ารหัสใหม่)")
+        self.assertEqual(describe_settings("mp3", ConvertSettings(audio_bitrate=256)), "256 kbps")
+        self.assertEqual(describe_settings("flac", ConvertSettings()), "Lossless")
 
 
 class BuildExtractArgsTests(unittest.TestCase):
@@ -195,9 +290,13 @@ class ValidateTests(TempDirCase):
         with self.assertRaisesRegex(InputError, "ไม่รองรับ"):
             task.validate()
 
-    def test_webm_is_not_a_target(self) -> None:
-        with self.assertRaisesRegex(InputError, r"\.webm"):
-            ConverterTask(str(self.source), str(self.dir / "out.webm")).validate()
+    def test_webm_is_a_target(self) -> None:
+        ConverterTask(str(self.source), str(self.dir / "out.webm")).validate()
+
+    def test_rejects_codec_the_container_cannot_hold(self) -> None:
+        task = ConverterTask(str(self.source), str(self.dir / "out.webm"), settings=ConvertSettings(video_codec="h264"))
+        with self.assertRaisesRegex(InputError, "H.264"):
+            task.validate()
 
     def test_supported_targets_pass(self) -> None:
         for ext in ("mp4", "mkv", "avi", "mov", "mp3", "wav", "aac", "flac", "MP4"):
@@ -368,6 +467,17 @@ class ProcessTests(TempDirCase):
         self.run_task(task, FakeFfmpeg())
         self.assertTrue(output.is_file())
 
+    def test_copy_checks_the_source_codec_first(self) -> None:
+        task = ConverterTask(str(self.source), str(self.dir / "o.mp4"), settings=ConvertSettings(video_codec="copy"))
+        with mock.patch.object(converter, "probe_media", return_value={"video": {"codec": "vp9"}, "audio": None}), \
+                self.assertRaisesRegex(InputError, "คงเดิม"):
+            self.run_task(task, FakeFfmpeg())
+        self.assertEqual(task.status, TaskStatus.FAILED)
+
+    def test_summary_mentions_settings(self) -> None:
+        task = ConverterTask("/v/a.mkv", "/v/a.mp4", settings=ConvertSettings(video_codec="h265", height=720))
+        self.assertEqual(task.summary(), "MKV → MP4 · H.265 · 720p")
+
     def test_run_passes_cancel_flag_to_ffmpeg(self) -> None:
         task = ConverterTask(str(self.source), str(self.dir / "o.mp4"))
         captured = {}
@@ -418,8 +528,17 @@ class RealConversionTests(TempDirCase):
         self.assertEqual(self.video.read_bytes(), original)
         self.assertEqual([p for p in self.dir.iterdir() if p.name.endswith(".part")], [])
 
+    def test_every_codec_really_encodes(self) -> None:
+        cases = [("mp4", "h265"), ("mov", "prores"), ("mkv", "av1"), ("webm", "vp9"), ("mkv", "copy")]
+        for ext, codec in cases:
+            with self.subTest(ext=ext, codec=codec):
+                output = self.dir / f"codec_{codec}.{ext}"
+                ConverterTask(str(self.video), str(output),
+                              settings=ConvertSettings(video_codec=codec, quality="small")).run()
+                self.assertIn("video", self.streams(output))
+
     def test_every_target_format(self) -> None:
-        for ext in ("mp4", "mkv", "avi", "mov", "mp3", "wav", "aac", "flac"):
+        for ext in ("mp4", "mkv", "avi", "mov", "webm", "mp3", "m4a", "wav", "aac", "flac", "opus"):
             with self.subTest(ext=ext):
                 output = self.dir / f"all.{ext}"
                 ConverterTask(str(self.video), str(output)).run()

@@ -1,0 +1,5 @@
+# Optional: run AI subtitles (faster-whisper) on an NVIDIA GPU with CUDA.
+# Needs an NVIDIA card and driver; about 1 GB. ClipHUB detects them and falls back to the CPU without them.
+#   pip install -r requirements-gpu.txt
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*

@@ -1,6 +1,8 @@
 """Tests for Feature 4 (tasks/subtitle.py). No faster-whisper, ffmpeg or network needed."""
 from __future__ import annotations
 
+import os
+
 import sys
 import tempfile
 import unittest
@@ -178,7 +180,8 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(result, self.out)
         self.assertEqual(task.cues, (Cue(0.0, 2.5, "สวัสดี"), Cue(5.0, 10.0, "ครับ")))
         self.assertFalse(self.out.exists())
-        module.WhisperModel.assert_called_once_with("base", device="cpu", compute_type="int8")
+        module.WhisperModel.assert_called_once_with(
+            "base", device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)  # every CPU core
         model.transcribe.assert_called_once()
         self.assertEqual(model.transcribe.call_args.kwargs, {"language": "th", "vad_filter": True})
         self.assertEqual(task.status, TaskStatus.DONE)

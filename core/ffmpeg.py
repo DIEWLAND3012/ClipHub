@@ -67,6 +67,118 @@ def probe_format(path: str) -> dict[str, Any]:
         raise ToolFailedError("อ่านข้อมูลไฟล์ไม่ได้ ไฟล์อาจเสียหาย") from exc
 
 
+def _fraction(text: str | None) -> float:
+    """'30000/1001' -> 29.97; anything unusable -> 0."""
+    try:
+        num, _, den = str(text or "").partition("/")
+        value = float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        return 0.0
+    return value if value > 0 else 0.0
+
+
+def _int(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def probe_media(path: str) -> dict[str, Any]:
+    """Everything the converter page shows about a file, from one ffprobe call.
+
+    Returns {"format_name", "format_long", "duration", "size", "bit_rate",
+             "video": {...} or None, "audio": {...} or None, "audio_streams", "subtitle_streams"}.
+    """
+    cmd = [find_tool("ffprobe"), "-v", "error", "-show_format", "-show_streams", "-of", "json", path]
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False, **_spawn_kwargs(),
+    )
+    try:
+        data = json.loads(proc.stdout)
+        fmt = data["format"]
+    except (KeyError, json.JSONDecodeError) as exc:
+        raise ToolFailedError("อ่านข้อมูลไฟล์ไม่ได้ ไฟล์อาจเสียหาย") from exc
+    streams = data.get("streams") or []
+    video = next((s for s in streams if s.get("codec_type") == "video"
+                  and not (s.get("disposition") or {}).get("attached_pic")), None)  # skip cover art
+    audios = [s for s in streams if s.get("codec_type") == "audio"]
+    info: dict[str, Any] = {
+        "format_name": fmt.get("format_name", ""),
+        "format_long": fmt.get("format_long_name", ""),
+        "duration": _fraction(fmt.get("duration")),
+        "size": _int(fmt.get("size")),
+        "bit_rate": _int(fmt.get("bit_rate")),
+        "video": None,
+        "audio": None,
+        "audio_streams": len(audios),
+        "subtitle_streams": sum(1 for s in streams if s.get("codec_type") == "subtitle"),
+    }
+    if video is not None:
+        info["video"] = {
+            "codec": video.get("codec_name", ""),
+            "profile": video.get("profile", ""),
+            "width": _int(video.get("width")),
+            "height": _int(video.get("height")),
+            "fps": round(_fraction(video.get("avg_frame_rate")) or _fraction(video.get("r_frame_rate")), 3),
+            "pix_fmt": video.get("pix_fmt", ""),
+            "bit_rate": _int(video.get("bit_rate")),
+        }
+    if audios:
+        audio = audios[0]
+        info["audio"] = {
+            "codec": audio.get("codec_name", ""),
+            "sample_rate": _int(audio.get("sample_rate")),
+            "channels": _int(audio.get("channels")),
+            "bit_rate": _int(audio.get("bit_rate")),
+        }
+    return info
+
+
+_encoders_cache: set[str] | None = None
+
+
+def available_encoders() -> set[str]:
+    """Encoder names this FFmpeg build has (cached). Empty when FFmpeg is missing."""
+    global _encoders_cache
+    if _encoders_cache is None:
+        try:
+            proc = subprocess.run(
+                [find_tool("ffmpeg"), "-hide_banner", "-encoders"], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", check=False, **_spawn_kwargs(),
+            )
+            names = set()
+            for line in proc.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and len(parts[0]) == 6 and parts[0][0] in "VAS":
+                    names.add(parts[1])
+            _encoders_cache = names
+        except (ToolNotFoundError, OSError):
+            _encoders_cache = set()
+    return _encoders_cache
+
+
+def probe_codecs(path: str) -> tuple[str, str]:
+    """(first video codec, first audio codec) names as ffprobe reports them; "" when absent."""
+    cmd = [
+        find_tool("ffprobe"), "-v", "error",
+        "-show_entries", "stream=codec_type,codec_name", "-of", "json", path,
+    ]
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False, **_spawn_kwargs(),
+    )
+    try:
+        streams = json.loads(proc.stdout).get("streams", [])
+    except json.JSONDecodeError as exc:
+        raise ToolFailedError("อ่านข้อมูลไฟล์ไม่ได้ ไฟล์อาจเสียหาย") from exc
+    first = {}
+    for stream in streams:
+        first.setdefault(stream.get("codec_type"), stream.get("codec_name") or "")
+    return first.get("video", ""), first.get("audio", "")
+
+
 def probe_duration(path: str) -> float:
     try:
         duration = float(probe_format(path).get("duration") or 0)
