@@ -2,16 +2,16 @@
 
 # ClipHUB
 
-[![ClipHUB CI](https://github.com/wasuratsomdet9009/ClipHub/actions/workflows/build.yml/badge.svg)](https://github.com/wasuratsomdet9009/ClipHub/actions/workflows/build.yml)
-[![Latest release](https://img.shields.io/github/v/release/wasuratsomdet9009/ClipHub)](https://github.com/wasuratsomdet9009/ClipHub/releases/latest)
+[![ClipHUB CI](https://github.com/DIEWLAND3012/ClipHub/actions/workflows/build.yml/badge.svg)](https://github.com/DIEWLAND3012/ClipHub/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/DIEWLAND3012/ClipHub)](https://github.com/DIEWLAND3012/ClipHub/releases/latest)
 
 เดสก์ท็อปแอปจัดการและแปลงสื่อ พร้อมถอดซับไตเติลด้วย AI สำหรับ Windows 11 และ macOS
 ทำด้วย PySide6, FFmpeg, yt-dlp และ faster-whisper (โครงงานรายวิชา SDD2)
 
 ## ดาวน์โหลด
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20(.exe)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/wasuratsomdet9009/ClipHub/releases/latest/download/ClipHUB-Windows.exe)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS%20(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/wasuratsomdet9009/ClipHub/releases/latest/download/ClipHUB-macOS.dmg)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20(.exe)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/latest/download/ClipHUB-Windows.exe)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS%20(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/latest/download/ClipHUB-macOS.dmg)
 
 | ระบบ | ไฟล์ | วิธีติดตั้ง |
 |---|---|---|
@@ -24,14 +24,24 @@
 >
 > **ไฟล์ติดตั้งยังไม่ได้ลงนามดิจิทัล:** Windows อาจขึ้นคำเตือน SmartScreen ให้กด *More info → Run anyway* ส่วน macOS ให้คลิกขวาที่ ClipHUB แล้วเลือก *Open* หรือไปที่ *System Settings → Privacy & Security → Open Anyway*
 
+## มีอะไรใหม่ใน v2.0
+
+ClipHUB เวอร์ชันใหม่ที่ออกแบบใหม่ทั้งหมด ([รายละเอียดทั้งหมด](CHANGELOG.md))
+
+- **หน้าตาแบบ Liquid Glass** สไตล์ Apple มีธีมสว่าง มืด และตามระบบ พร้อมไอคอนใหม่และหน้าจอเปิดเครื่องแบบ Mac
+- **ทำทีละขั้นตอน** ทุกหน้าใช้รูปแบบเดียวกัน ปุ่มเริ่มงานอยู่ตำแหน่งเดิมเสมอ
+- **ใช้การ์ดจอเร่งความเร็ว** NVIDIA NVENC, Intel Quick Sync, AMD AMF, Apple VideoToolbox และทำหลายงานพร้อมกัน
+- **ซับไตเติลเพลงแม่นขึ้นมาก** ตรวจภาษาอัตโนมัติ รองรับ ไทย อังกฤษ ญี่ปุ่น เกาหลี จีน และมีโหมดเพลง
+- **สลับภาษาไทย / อังกฤษ** ได้ทันทีในหน้าการตั้งค่า
+
 ## ฟีเจอร์
 
-1. **ดาวน์โหลดวิดีโอ YouTube** วางลิงก์ เลือกความละเอียด หรือดึงเฉพาะเสียงเป็น MP3 แล้วเลือกโฟลเดอร์ปลายทาง
-2. **แปลงฟอร์แมต** แปลงวิดีโอและเสียงเป็นฟอร์แมตที่ต้องการ หรือแยกเสียงออกจากวิดีโอ
-3. **บีบอัดวิดีโอ** ใช้ H.264/AAC มีโหมด High, Balanced, Small หรือกำหนด kbps เอง พร้อมประเมินขนาดไฟล์ก่อนทำ
-4. **ซับไตเติลด้วย AI** ถอดเสียงพูดเป็นไฟล์ `.srt` และ `.vtt` ด้วย faster-whisper รองรับภาษาไทยและอังกฤษ พร้อมดูตัวอย่างก่อนส่งออก
+1. **ดาวน์โหลดวิดีโอ YouTube** เลือกโฟลเดอร์ วางลิงก์ (โหลดข้อมูลคลิปเอง) เลือกวิดีโอหรือเสียง ฟอร์แมต (MP4, MOV, MKV, WEBM / MP3, M4A, WAV…) ความละเอียด 144p–4K หรือบิตเรตเสียง แล้วตั้งชื่อไฟล์
+2. **แปลงไฟล์** วางไฟล์วิดีโอหรือเสียง ดูรายละเอียดไฟล์ เลือกฟอร์แมตและ codec แล้วตั้งชื่อไฟล์
+3. **บีบอัดวิดีโอ** โหมด High, Balanced, Small หรือกำหนด kbps เอง พร้อมประเมินขนาดไฟล์ก่อนทำ
+4. **ซับไตเติลด้วย AI** ถอดเสียงพูดหรือเนื้อเพลงเป็นไฟล์ `.srt` และ `.vtt` ด้วย faster-whisper พร้อมดูตัวอย่างก่อนส่งออก
 
-ทุกงานเข้าคิวด้านขวาของหน้าต่าง ดูความคืบหน้า ยกเลิก หรือรอให้เสร็จได้
+ทุกงานเข้าคิว (ปุ่ม **คิว** ในแถบด้านซ้าย) ดูความคืบหน้า ยกเลิก หรือรอให้เสร็จได้
 
 ## รันจากซอร์ส
 
@@ -48,7 +58,7 @@ python main.py
 pip install -r requirements-gpu.txt
 ```
 
-การแปลงและบีบอัดวิดีโอใช้ GPU ให้อัตโนมัติ (NVIDIA NVENC, Intel Quick Sync, AMD AMF, Apple VideoToolbox) ดูอุปกรณ์ที่แอปพบได้ที่ปุ่ม **ประสิทธิภาพ** ในแถบด้านซ้าย การ์ด NVIDIA ต้องใช้ไดรเวอร์ที่รองรับ FFmpeg รุ่นที่ติดตั้ง
+การแปลงและบีบอัดวิดีโอใช้ GPU ให้อัตโนมัติ (NVIDIA NVENC, Intel Quick Sync, AMD AMF, Apple VideoToolbox) เลือกการ์ดจอได้ที่ปุ่ม **การตั้งค่า** ในแถบด้านซ้าย การ์ด NVIDIA ต้องใช้ไดรเวอร์ที่รองรับ FFmpeg รุ่นที่ติดตั้ง
 
 ## สร้างไฟล์ติดตั้งเอง
 
@@ -57,15 +67,15 @@ pip install pyinstaller
 pyinstaller --noconfirm packaging/ClipHUB.spec
 ```
 
-macOS จะได้ `dist/ClipHUB.app` ส่วน Windows จะได้ `dist/ClipHUB.exe`
+macOS จะได้ `dist/ClipHUB.app` ส่วน Windows จะได้ `dist/ClipHUB.exe` (ไฟล์เดียว ประมาณ 155 MB)
 
 ## การปล่อยเวอร์ชัน (สำหรับทีม)
 
 สร้าง tag ที่ `main` แล้วผลักขึ้น GitHub ระบบ CI จะ build ทั้งสองระบบ และสร้าง Release ให้อัตโนมัติ โดยใช้ชื่อไฟล์เดิมเสมอ เพื่อให้ปุ่มดาวน์โหลดด้านบนชี้ไปที่เวอร์ชันล่าสุดได้
 
 ```bash
-git tag -a v1.0.0 -m "ClipHUB v1.0.0"
-git push origin v1.0.0
+git tag -a v2.0.0 -m "ClipHUB v2.0.0"
+git push origin v2.0.0
 ```
 
 ## ทดสอบ
