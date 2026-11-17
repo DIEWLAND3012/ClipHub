@@ -4,6 +4,10 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-17
+
+A new ClipHUB: liquid-glass redesign, step-by-step tools, GPU acceleration, Thai/English, accurate song subtitles.
+
 ### App icon
 - The new ClipHUB icon (assets/icons/cliphub.svg) is used on the title bar, the taskbar (own Windows app ID, so not Python's icon), the sidebar, the boot screen, the README, and as the .exe / .app icon (Explorer, desktop, Start menu, Dock).
 - scripts/build_icons.py renders the SVG into cliphub.ico, cliphub.icns and cliphub.png; scripts/make_desktop_shortcut.py adds a desktop shortcut for running from source.

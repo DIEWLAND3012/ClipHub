@@ -9,7 +9,7 @@ from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ui import theme
-from ui.app_icon import icon_pixmap
+from ui.app_icon import IconView
 from ui.theme import repolish
 from ui.widgets import GlassCard, Segmented, bind_icon, label
 
@@ -36,11 +36,7 @@ class Sidebar(GlassCard):
         layout.setContentsMargins(12, 18, 12, 14)
         layout.setSpacing(3)
 
-        mark = QLabel()
-        mark.setObjectName("BrandIcon")
-        mark.setFixedSize(42, 42)
-        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setPixmap(icon_pixmap(42))  # the ClipHUB app icon
+        mark = IconView(42)  # the ClipHUB app icon
         self.brand_texts = QWidget()
         texts = QVBoxLayout(self.brand_texts)
         texts.setContentsMargins(0, 0, 0, 0)
@@ -50,6 +46,7 @@ class Sidebar(GlassCard):
         self.brand = QHBoxLayout()
         self.brand.setContentsMargins(7, 0, 6, 18)
         self.brand.setSpacing(11)
+        self.brand.addStretch(0)  # grows in compact mode so the icon sits in the middle
         self.brand.addWidget(mark)
         self.brand.addWidget(self.brand_texts)
         self.brand.addStretch(1)
@@ -181,6 +178,8 @@ class Sidebar(GlassCard):
             return
         self.compact = compact
         self.brand_texts.setVisible(not compact)
+        self.brand.setStretch(0, 1 if compact else 0)  # centre the icon when only icons show
+        self.brand.setContentsMargins(0 if compact else 7, 0, 0 if compact else 6, 18)
         self.appearance.setVisible(not compact)
         self.cycle_button.setVisible(compact)
         for button, text in zip(self.buttons + [self.cycle_button, self.queue_button, self.perf_button],

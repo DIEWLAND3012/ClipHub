@@ -39,7 +39,7 @@ from ui.queue_panel import QueuePanel
 from ui.sidebar import Sidebar
 from ui.widgets import Backdrop, GlassCard, fade_in, pulse
 
-APP_VERSION = "v1.1"
+APP_VERSION = "v2.0"
 QUEUE_WIDTH = 340
 CONTENT_MAX_WIDTH = 1120
 COMPACT_SIDEBAR_WIDTH = 940   # below this the sidebar shows icons only

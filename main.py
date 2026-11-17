@@ -17,6 +17,7 @@ def main() -> int:
     set_windows_app_id()  # before any window: the taskbar then groups ClipHUB under its own icon
     app = QApplication(sys.argv)
     app.setApplicationName("ClipHUB")
+    app.setApplicationVersion("2.0.0")
     app.setWindowIcon(app_icon())  # every window, dialog and the taskbar
     # Every on-screen text goes through ui.i18n; the saved language applies from the first window.
     i18n.install()

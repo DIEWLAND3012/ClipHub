@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QIcon, QImage, QPainter, QPixmap
+from PySide6.QtWidgets import QWidget
 
 
 def _icons_dir() -> Path:
@@ -50,6 +51,21 @@ def app_icon() -> QIcon:
     for size in (16, 20, 24, 32, 40, 48, 64, 128, 256, 512):
         icon.addPixmap(QPixmap.fromImage(render_icon(size)))
     return icon
+
+
+class IconView(QWidget):
+    """The app icon drawn from a large render with smooth scaling: crisp at any size and screen scale."""
+
+    def __init__(self, size: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self._source = QPixmap.fromImage(render_icon(256))
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.drawPixmap(self.rect(), self._source)
 
 
 def set_windows_app_id() -> None:
