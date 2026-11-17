@@ -5,8 +5,12 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 ## [Unreleased]
 
 ### FastCut (new tool)
-- A fifth tool, between Compress and Subtitles: cut part of a video or a song. The preview plays with a playhead; the timeline shows the sound as bars under a gradient box, picked the way Instagram picks a music clip: drag the box, stretch either edge, or type the length (default 20 s). Space plays the chosen part on a loop.
-- Fast (stream copy, seconds, may start on the keyframe just before) or Accurate (re-encodes the video on the GPU when there is one). Audio is always cut fast and exactly.
+- A fifth tool, between Compress and Subtitles: cut part of a video or a song. The preview plays with a playhead; the timeline shows the sound as bars under a gradient box, picked the way Instagram picks a music clip: drag the box, stretch either edge, or type the length (default 20 s). The chosen part plays on a loop.
+- Thai name ตัดคลิป (FastCut in English). The editor (preview, play button, timeline) spans the full width at every window size; the preview height follows the window so the timeline always fits. Settings sit below it.
+- Cuts are always frame-accurate (video re-encoded on the GPU when there is one; audio stream-copied).
+- Preview quality Full, 1/2, 1/4, 1/8 like Premiere Pro: a smaller proxy copy is made in the background for smooth playback on slower computers (remembered; proxies deleted on exit).
+- Keys: Space plays / pauses; Left / Right or A / D move the trim box 1 s (Shift: 5 s).
+- Trim box, handles and play button use the app accent colour; explanatory notes removed.
 - Choose the folder and the file name, then Export.
 
 ### Boot screen

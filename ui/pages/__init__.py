@@ -14,6 +14,6 @@ PAGES = [
     ("ดาวน์โหลด", "download", DownloaderPage),
     ("แปลงไฟล์", "convert", ConverterPage),
     ("บีบอัด", "compress", CompressorPage),
-    ("FastCut", "fastcut", FastCutPage),
+    ("ตัดคลิป", "fastcut", FastCutPage),
     ("ซับไตเติล", "subtitle", SubtitlePage),
 ]

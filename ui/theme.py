@@ -467,6 +467,8 @@ _ICONS = {
     "play": '<path d="M8 5l12 7-12 7z" fill="currentColor" stroke="none"/>',
     "pause": '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>'
              '<rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
+    "minus": '<path d="M5 12h14"/>',
+    "plus": '<path d="M12 5v14M5 12h14"/>',
     "fastcut": '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>'
                '<path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/>',
     "upload": '<path d="M12 15V3m0 0 4 4m-4-4-4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',

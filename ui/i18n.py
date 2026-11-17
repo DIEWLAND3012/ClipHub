@@ -95,7 +95,7 @@ EN: dict[str, str] = {
     # compressor
     "ลากไฟล์วิดีโอมาวางที่นี่": "Drop a video file here",
     "ลากไฟล์มาวางที่นี่": "Drop a file here",
-    "ลากไฟล์วิดีโอหรือเสียงมาวางที่นี่": "Drop a video or audio file here",
+    "ตัดคลิป": "FastCut", "คุณภาพพรีวิว": "Preview quality", "เล่น / หยุด (Space)": "Play / Pause (Space)",
     "เลือกไฟล์วิดีโอหรือเสียง": "Choose a video or audio file", "ความยาวที่ตัด": "Clip length",
     "วินาที": "seconds", "วิธีตัด": "How to cut", "เร็ว": "Fast",
     "บันทึกที่": "Save to", "เลือก…": "Choose…", "เลือกโฟลเดอร์ปลายทาง": "Choose a destination folder",

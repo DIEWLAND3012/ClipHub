@@ -1,23 +1,31 @@
-"""Feature 5 page: FastCut, pick a part of a video or song the way Instagram picks a music clip.
+"""Feature 5 page: FastCut (ตัดคลิป), cut part of a video or song on a timeline.
 
-Flow: drop or pick a file -> the preview (with play and a moving playhead) and the timeline pop in.
-The timeline shows the sound as bars under a gradient box: drag the box to move the part, drag
-its edges to make it longer or shorter, or type the length. Then choose the folder and the name,
-and Export (from the action bar) sends a FastCutTask to the queue.
+Flow: drop or pick a file -> the editor pops in across the whole width: the preview, the play
+button and the timeline (sound bars under a trim box). Drag the box to move the part, drag its
+edges to resize it, or type the length. Below: length, preview quality, folder and file name.
+Export (action bar) sends a FastCutTask to the queue.
+
+Keys: Space plays / pauses; Left / Right or A / D move the trim box by 1 s (Shift: 5 s).
+Preview quality Full, 1/2, 1/4, 1/8 plays a smaller proxy copy (made in the background) so slower
+computers do not stutter, as in Premiere Pro.
 """
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDoubleValidator, QImage, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QRectF, QSettings, QSize, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDoubleValidator, QImage, QKeySequence, QPainter, QPainterPath, QPen, QShortcut
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout,
+    QWidget,
 )
 
 from core.errors import ClipHubError
-from core.ffmpeg import probe_media
+from core.ffmpeg import _spawn_kwargs, find_tool, probe_media, run_ffmpeg
 from core.naming import safe_filename, strip_extension, unique_path
 from tasks.fastcut import MIN_LENGTH, FastCutTask, format_time, is_audio, output_ext, waveform_peaks
 from tasks.fastcut import suggest_output_path as suggest_cut_output
@@ -29,17 +37,11 @@ from ui.widgets import (
 
 FILE_FILTER = ("วิดีโอและเสียง (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.flv *.wmv *.ts *.mts *.3gp *.mpg "
                "*.mp3 *.m4a *.aac *.wav *.flac *.ogg *.opus *.wma *.aif *.aiff);;ทุกไฟล์ (*)")
-DEFAULT_LENGTH = 20.0  # seconds, like a story clip
-GRADIENT = ("#fccc2e", "#f7772d", "#e8336b", "#9b35f5")  # the selection box, yellow to purple
-
-
-def _gradient(rect: QRectF, alpha: int = 255) -> QLinearGradient:
-    grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    for index, hex_color in enumerate(GRADIENT):
-        color = QColor(hex_color)
-        color.setAlpha(alpha)
-        grad.setColorAt(index / (len(GRADIENT) - 1), color)
-    return grad
+DEFAULT_LENGTH = 20.0  # seconds
+PREVIEW_SCALES = {0: 1, 1: 2, 2: 4, 3: 8}  # segment id -> divide the picture by
+PREVIEW_LABELS = {0: "Full", 1: "1/2", 2: "1/4", 3: "1/8"}
+PROXY_DIR = Path(tempfile.gettempdir()) / "cliphub-preview"
+SETTINGS_KEY = "fastcut/preview_scale"
 
 
 def _step(number: int, text: str) -> QHBoxLayout:
@@ -83,20 +85,20 @@ class _Loader(QThread):
 
 
 class _FrameGrab(QThread):
-    """One still frame at a time, via FFmpeg: a paused player does not always show where it seeks."""
+    """One still frame via FFmpeg: a paused player does not always show where it seeks."""
 
     grabbed = Signal(str, float, QImage)
 
-    def __init__(self, path: str, seconds: float, parent: QWidget | None = None) -> None:
+    def __init__(self, path: str, seconds: float, width: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.path, self.seconds = path, seconds
+        self.path, self.seconds, self.width = path, seconds, width
 
     def run(self) -> None:
         import subprocess
-        from core.ffmpeg import _spawn_kwargs, find_tool
         try:
             cmd = [find_tool("ffmpeg"), "-v", "error", "-ss", f"{self.seconds:.3f}", "-i", self.path,
-                   "-frames:v", "1", "-vf", "scale=960:-2", "-f", "image2pipe", "-vcodec", "bmp", "-"]
+                   "-frames:v", "1", "-vf", f"scale='min({self.width},iw)':-2", "-f", "image2pipe",
+                   "-vcodec", "bmp", "-"]
             data = subprocess.run(cmd, capture_output=True, timeout=15, check=False, **_spawn_kwargs()).stdout
         except Exception:
             return
@@ -105,24 +107,68 @@ class _FrameGrab(QThread):
             self.grabbed.emit(self.path, self.seconds, image)
 
 
+def proxy_path(source: str, scale: int) -> Path:
+    stat = os.stat(source)
+    key = hashlib.sha1(f"{source}|{stat.st_size}|{stat.st_mtime}|{scale}".encode()).hexdigest()[:16]
+    return PROXY_DIR / f"{key}.mp4"
+
+
+class _ProxyMaker(QThread):
+    """A small, easy-to-play copy of the video for the preview (cached until the app closes)."""
+
+    progress = Signal(str, int)  # source, percent
+    ready = Signal(str, int, str)  # source, scale, proxy path
+
+    def __init__(self, source: str, scale: int, duration: float, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.source, self.scale, self.duration = source, scale, duration
+        self.cancelled = False
+
+    def run(self) -> None:
+        target = proxy_path(self.source, self.scale)
+        if not target.is_file():
+            PROXY_DIR.mkdir(parents=True, exist_ok=True)
+            partial = target.with_suffix(".part")
+            args = ["-i", self.source, "-map", "0:v:0", "-map", "0:a:0?",
+                    "-vf", f"scale=trunc(iw/{self.scale}/2)*2:-2", "-c:v", "libx264", "-preset", "ultrafast",
+                    "-crf", "28", "-g", "15", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
+                    "-f", "mp4", str(partial)]
+            try:
+                run_ffmpeg(args, duration=self.duration,
+                           on_progress=lambda f: self.progress.emit(self.source, int(f * 100)),
+                           is_cancelled=lambda: self.cancelled)
+                partial.replace(target)
+            except Exception:
+                partial.unlink(missing_ok=True)
+                return
+        self.ready.emit(self.source, self.scale, str(target))
+
+
 # --- preview -------------------------------------------------------------------------------------------
 class VideoView(QWidget):
-    """The current video frame, letterboxed in a rounded black panel (or a music mark for audio)."""
+    """The current video frame, letterboxed in a rounded black panel (a music mark for audio)."""
+
+    MAX_H = 420
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setMinimumHeight(150)
-        self.setMaximumHeight(300)
+        self.limit = self.MAX_H  # set by the page so the timeline always fits on screen
+        self.setMinimumHeight(140)
+        self.setMaximumHeight(self.MAX_H)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._image = QImage()
         self.audio_only = False
 
-    def sizeHint(self):  # noqa: N802 (Qt API)
-        from PySide6.QtCore import QSize
-        return QSize(480, 270)
+    def sizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        return QSize(640, self.limit)
+
+    def set_limit(self, height: int) -> None:
+        self.limit = max(140, min(self.MAX_H, height))
+        self.setMaximumHeight(self.limit)
+        self.updateGeometry()
 
     def heightForWidth(self, width: int) -> int:  # noqa: N802 (Qt API)
-        return min(300, max(150, width * 9 // 16))
+        return min(self.limit, max(140, width * 9 // 16))
 
     def hasHeightForWidth(self) -> bool:  # noqa: N802 (Qt API)
         return True
@@ -148,12 +194,12 @@ class VideoView(QWidget):
         clip = QPainterPath()
         clip.addRoundedRect(rect, 14, 14)
         painter.setClipPath(clip)
-        painter.fillRect(rect, QColor("#000000") if not self.audio_only else QColor(0, 0, 0, 0))
         if self.audio_only:
-            painter.fillPath(clip, _gradient(rect, 235))
-            icon = theme.icon_pixmap("music", "#ffffff", 64, 1.8)
-            painter.drawPixmap(int(rect.center().x() - 32), int(rect.center().y() - 32), icon)
+            painter.fillPath(clip, theme.color("accent", 0.12))
+            icon = theme.icon_pixmap("music", theme.hex_color("accent"), 56, 1.8)
+            painter.drawPixmap(int(rect.center().x() - 28), int(rect.center().y() - 28), icon)
             return
+        painter.fillRect(rect, QColor("#000000"))
         if self._image.isNull():
             return
         size = self._image.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
@@ -163,12 +209,13 @@ class VideoView(QWidget):
 
 
 class PlayButton(QPushButton):
-    """Round play / pause button filled with the selection gradient."""
+    """Round accent play / pause button, like the app's primary buttons."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedSize(40, 40)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Space belongs to the page shortcut
         self._playing = False
 
     def set_playing(self, playing: bool) -> None:
@@ -179,12 +226,12 @@ class PlayButton(QPushButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        accent = theme.color("accent_hover" if self.underMouse() else "accent")
+        if not self.isEnabled():
+            accent.setAlphaF(0.4)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(_gradient(rect, 255 if self.isEnabled() else 120))
+        painter.setBrush(accent)
         painter.drawEllipse(rect)
-        if self.underMouse():
-            painter.setBrush(QColor(255, 255, 255, 40))
-            painter.drawEllipse(rect)
         icon = theme.icon_pixmap("pause" if self._playing else "play", "#ffffff", 16, 2.2)
         nudge = 0 if self._playing else 1  # a play triangle looks centred a pixel to the right
         painter.drawPixmap(int(rect.center().x() - 8 + nudge), int(rect.center().y() - 8), icon)
@@ -192,7 +239,7 @@ class PlayButton(QPushButton):
 
 # --- timeline --------------------------------------------------------------------------------------------
 class TrimTimeline(QWidget):
-    """Sound bars with a gradient selection box (move it, stretch either edge) and a playhead."""
+    """Sound bars with a trim box (move it, drag either handle) and a playhead, in the app's accent."""
 
     selection_changed = Signal(float, float)  # start, end (seconds)
     seek_requested = Signal(float)
@@ -200,12 +247,12 @@ class TrimTimeline(QWidget):
 
     BAR_W = 3.0
     GAP = 4.0
-    EDGE = 12.0  # grab width of a box edge
-    BOX_H = 92.0
+    HANDLE = 12.0  # width of a handle
+    BOX_H = 84.0
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setMinimumHeight(int(self.BOX_H) + 22)
+        self.setMinimumHeight(int(self.BOX_H) + 12)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.duration = 0.0
@@ -213,8 +260,8 @@ class TrimTimeline(QWidget):
         self.start = 0.0
         self.end = 0.0
         self.playhead = 0.0
-        self._drag: str = ""     # "move" | "left" | "right" | "seek"
-        self._grab = 0.0         # where in the box the move started (seconds)
+        self._drag = ""      # "move" | "left" | "right"
+        self._grab = 0.0     # where in the box the move started (seconds)
         self._moved = False
 
     # --- data -----------------------------------------------------------------------------
@@ -229,10 +276,12 @@ class TrimTimeline(QWidget):
         length = max(MIN_LENGTH, min(end - start, self.duration))
         start = max(0.0, min(start, self.duration - length))
         self.start, self.end = start, start + length
-        self.playhead = min(max(self.playhead, self.start), self.end)
         self.update()
         if emit:
             self.selection_changed.emit(self.start, self.end)
+
+    def move_by(self, seconds: float) -> None:
+        self.set_selection(self.start + seconds, self.end + seconds)
 
     def set_playhead(self, seconds: float) -> None:
         self.playhead = seconds
@@ -240,7 +289,7 @@ class TrimTimeline(QWidget):
 
     # --- geometry ------------------------------------------------------------------------------
     def _track(self) -> QRectF:
-        return QRectF(self.EDGE, (self.height() - self.BOX_H) / 2, self.width() - 2 * self.EDGE, self.BOX_H)
+        return QRectF(self.HANDLE, (self.height() - self.BOX_H) / 2, self.width() - 2 * self.HANDLE, self.BOX_H)
 
     def _x(self, seconds: float) -> float:
         track = self._track()
@@ -253,54 +302,56 @@ class TrimTimeline(QWidget):
         return max(0.0, min(self.duration, (x - track.left()) / track.width() * self.duration))
 
     def _box(self) -> QRectF:
+        """The chosen part, with the handles outside it (like an iOS trim bar)."""
         track = self._track()
         left, right = self._x(self.start), self._x(self.end)
-        if right - left < 2 * self.EDGE:  # a short part of a long file stays easy to grab
+        if right - left < 8:  # a short part of a long file stays easy to see and grab
             middle = (left + right) / 2
-            left, right = middle - self.EDGE, middle + self.EDGE
-        return QRectF(left, track.top(), right - left, track.height())
+            left, right = middle - 4, middle + 4
+        return QRectF(left - self.HANDLE, track.top(), right - left + 2 * self.HANDLE, track.height())
 
     # --- painting ---------------------------------------------------------------------------------
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if self.duration <= 0:
+            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         track = self._track()
         box = self._box()
-        if self.duration <= 0:
-            return
+        inner = box.adjusted(self.HANDLE, 3, -self.HANDLE, -3)
+        accent = theme.color("accent")
         dim = theme.color("text3")
+
+        # the chosen part: a soft accent wash, a little stronger where it has already played
+        painter.fillRect(inner, theme.color("accent", 0.14))
+        if self.start <= self.playhead <= self.end:
+            painter.fillRect(QRectF(inner.left(), inner.top(), self._x(self.playhead) - inner.left(),
+                                    inner.height()), theme.color("accent", 0.22))
+
         count = max(1, int(track.width() // (self.BAR_W + self.GAP)))
-        played = QRectF(box.left(), box.top(), max(0.0, self._x(self.playhead) - box.left()), box.height())
-
-        # box: soft gradient inside, solid gradient for the part already played
-        inner = QPainterPath()
-        inner.addRoundedRect(box, 12, 12)
-        painter.fillPath(inner, _gradient(box, 70))
-        painter.save()
-        painter.setClipPath(inner)
-        painter.fillRect(played, _gradient(box, 255))
-        painter.restore()
-
         for index in range(count):
             x = track.left() + index * (self.BAR_W + self.GAP) + self.GAP / 2
             level = self._level(index / max(count - 1, 1))
-            bar_h = 10 + level * (track.height() * 0.62 - 10)
+            bar_h = 8 + level * (track.height() * 0.6 - 8)
             rect = QRectF(x, track.center().y() - bar_h / 2, self.BAR_W, bar_h)
-            inside = box.left() <= x <= box.right()
-            painter.fillPath(self._pill(rect), QColor("#ffffff") if inside else dim)
+            painter.fillPath(self._pill(rect), accent if inner.left() <= x <= inner.right() else dim)
 
-        pen = QPen()
-        pen.setBrush(_gradient(box))
-        pen.setWidthF(4)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(box.adjusted(2, 2, -2, -2), 10, 10)
-        for edge_x in (box.left() + 6, box.right() - 6):  # grab marks on the edges
-            painter.fillPath(self._pill(QRectF(edge_x - 1.5, box.center().y() - 12, 3, 24)), QColor("#ffffff"))
+        # frame: accent border top and bottom, solid handles at both ends with a white grip
+        frame = QPainterPath()
+        frame.addRoundedRect(box, 10, 10)
+        hole = QPainterPath()
+        hole.addRect(inner)
+        painter.fillPath(frame.subtracted(hole), accent)
+        for grip_x in (box.left() + self.HANDLE / 2, box.right() - self.HANDLE / 2):
+            painter.fillPath(self._pill(QRectF(grip_x - 1.25, box.center().y() - 11, 2.5, 22)), QColor("#ffffff"))
 
         if self.start <= self.playhead <= self.end:
             x = self._x(self.playhead)
-            painter.fillRect(QRectF(x - 1, box.top() + 6, 2, box.height() - 12), QColor("#ffffff"))
+            pen = QPen(theme.color("text"))
+            pen.setWidthF(2)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.drawLine(int(x), int(inner.top() + 4), int(x), int(inner.bottom() - 4))
 
     def _level(self, fraction: float) -> float:
         if not self.peaks:
@@ -316,9 +367,9 @@ class TrimTimeline(QWidget):
     # --- mouse ------------------------------------------------------------------------------------------
     def _hit(self, x: float) -> str:
         box = self._box()
-        if abs(x - box.left()) <= self.EDGE:
+        if box.left() - 4 <= x <= box.left() + self.HANDLE:
             return "left"
-        if abs(x - box.right()) <= self.EDGE:
+        if box.right() - self.HANDLE <= x <= box.right() + 4:
             return "right"
         if box.left() < x < box.right():
             return "move"
@@ -327,9 +378,8 @@ class TrimTimeline(QWidget):
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 (Qt API)
         x = event.position().x()
         if not self._drag:
-            hit = self._hit(x)
             shape = {"left": Qt.CursorShape.SizeHorCursor, "right": Qt.CursorShape.SizeHorCursor,
-                     "move": Qt.CursorShape.OpenHandCursor}.get(hit, Qt.CursorShape.PointingHandCursor)
+                     "move": Qt.CursorShape.OpenHandCursor}.get(self._hit(x), Qt.CursorShape.PointingHandCursor)
             self.setCursor(shape)
             return
         self._moved = True
@@ -339,13 +389,12 @@ class TrimTimeline(QWidget):
             self.set_selection(t - self._grab, t - self._grab + length)
             self.seek_requested.emit(self.start)
         elif self._drag == "left":
-            start = max(0.0, min(t, self.end - MIN_LENGTH))
-            self.set_selection(start, self.end)
+            self.set_selection(max(0.0, min(t, self.end - MIN_LENGTH)), self.end)
             self.seek_requested.emit(self.start)
         elif self._drag == "right":
             end = min(self.duration, max(t, self.start + MIN_LENGTH))
             self.set_selection(self.start, end)
-            self.seek_requested.emit(max(self.start, end - 1.5))  # show what the end sounds like
+            self.seek_requested.emit(max(self.start, end - 1.5))  # show where it ends
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API)
         if event.button() != Qt.MouseButton.LeftButton or self.duration <= 0:
@@ -366,10 +415,11 @@ class TrimTimeline(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        if self._drag == "move" and not self._moved:
-            self.seek_requested.emit(min(max(self._t(event.position().x()), self.start), self.end))
-        if self._drag:
+        clicked_inside = self._drag == "move" and not self._moved
+        if self._drag and not clicked_inside:
             self.drag_finished.emit()
+        if clicked_inside:  # a click inside the box moves the playhead there
+            self.seek_requested.emit(min(max(self._t(event.position().x()), self.start), self.end))
         self._drag = ""
         self.mouseMoveEvent(event)
 
@@ -385,22 +435,28 @@ class FastCutPage(QWidget):
         self._has_video = True
         self._loaders: set[_Loader] = set()
         self._reserved: set[str] = set()
-        self._player = None  # QMediaPlayer, made on first use
-        self._grab_at = -1.0     # still frame wanted at (seconds)
+        self._player = None      # QMediaPlayer, made on first use
+        self._source = ""        # what the player plays: the file or its proxy
+        self._proxy: _ProxyMaker | None = None
+        self._grab_at = -1.0
         self._grabber: _FrameGrab | None = None
         self._grab_timer = QTimer(self)
         self._grab_timer.setSingleShot(True)
-        self._grab_timer.setInterval(90)  # while dragging, fetch at most ~10 frames a second
+        self._grab_timer.setInterval(90)  # while dragging, at most ~10 still frames a second
         self._grab_timer.timeout.connect(self._grab_frame)
         self._build()
+        self._bind_keys()
         self._refresh()
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._shutdown)
 
     # --- layout ---------------------------------------------------------------------------------
     def _build(self) -> None:
         col = QVBoxLayout(self)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(16)
-        col.addLayout(page_header("FastCut"))
+        col.addLayout(page_header("ตัดคลิป"))
         self.dropzone = DropZone("ลากไฟล์วิดีโอหรือเสียงมาวางที่นี่", FILE_FILTER, "เลือกไฟล์วิดีโอหรือเสียง")
         self.dropzone.setMinimumHeight(300)
         self.dropzone.file_chosen.connect(self.set_input_file)
@@ -411,29 +467,26 @@ class FastCutPage(QWidget):
         self.notice.hide()
         col.addWidget(self.notice)
 
-        self.columns = Columns(breakpoint=820, stretch=(7, 5))
-        self.preview_card = self._build_preview()
+        self.editor_card = self._build_editor()     # full width at every window size
         self.settings_card = self._build_settings()
-        self.columns.left.addWidget(self.preview_card)
-        self.columns.right.addWidget(self.settings_card)
-        self.columns.right.addStretch(1)
-        col.addWidget(self.columns)
+        col.addWidget(self.editor_card)
+        col.addWidget(self.settings_card)
         col.addStretch(1)
-        for widget in (self.preview_card, self.settings_card):
+        for widget in (self.editor_card, self.settings_card):
             widget.hide()
 
         self.action_bar = ActionBar()
         self.export_btn = self.action_bar.add_button(primary_button("Export", "fastcut"))
         self.export_btn.clicked.connect(self._submit)
 
-    def _build_preview(self) -> QFrame:
-        frame, layout = card(spacing=12, margins=(16, 16, 16, 14))
+    def _build_editor(self) -> QFrame:
+        frame, layout = card(spacing=10, margins=(16, 16, 16, 12))
         self.view = VideoView()
-        layout.addWidget(self.view, 1)
+        layout.addWidget(self.view)
         row = QHBoxLayout()
         row.setSpacing(12)
         self.play_btn = PlayButton()
-        self.play_btn.setToolTip("เล่นช่วงที่เลือก (Space)")
+        self.play_btn.setToolTip("เล่น / หยุด (Space)")
         self.play_btn.clicked.connect(self.toggle_play)
         self.file_name = ElidedLabel(mode=Qt.TextElideMode.ElideMiddle)
         self.file_name.setObjectName("FileTitle")
@@ -441,91 +494,13 @@ class FastCutPage(QWidget):
         self.time_label.setObjectName("TimeLabel")
         change = QPushButton("เปลี่ยนไฟล์")
         change.setCursor(Qt.CursorShape.PointingHandCursor)
+        change.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         change.clicked.connect(lambda: self.dropzone.browse())
         row.addWidget(self.play_btn)
         row.addWidget(self.file_name, 1)
         row.addWidget(self.time_label)
         row.addWidget(change)
         layout.addLayout(row)
-        layout.addWidget(self._build_timeline())
-        return frame
-
-    def _build_settings(self) -> QFrame:
-        frame, layout = card(spacing=10, margins=(22, 20, 22, 22))
-        layout.addLayout(_step(1, "ความยาวที่ตัด"))
-        self.length_box = QFrame()
-        self.length_box.setObjectName("Control")
-        self.length_box.setFixedHeight(theme.CONTROL_HEIGHT)
-        length_row = QHBoxLayout(self.length_box)
-        length_row.setContentsMargins(6, 0, 14, 0)
-        length_row.setSpacing(6)
-        self.minus_btn = QPushButton("−")
-        self.plus_btn = QPushButton("+")
-        for button in (self.minus_btn, self.plus_btn):
-            button.setObjectName("StepButton")
-            button.setFixedSize(34, 34)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setAutoRepeat(True)
-        self.minus_btn.clicked.connect(lambda: self._nudge_length(-1))
-        self.plus_btn.clicked.connect(lambda: self._nudge_length(1))
-        self.length_edit = QLineEdit(f"{DEFAULT_LENGTH:g}")
-        self.length_edit.setObjectName("KbpsEdit")
-        self.length_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        validator = QDoubleValidator(0.5, 99999, 1)
-        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
-        self.length_edit.setValidator(validator)
-        self.length_edit.editingFinished.connect(self._on_length_typed)
-        unit = QLabel("วินาที")
-        unit.setObjectName("Unit")
-        length_row.addWidget(self.minus_btn)
-        length_row.addWidget(self.length_edit, 1)
-        length_row.addWidget(self.plus_btn)
-        length_row.addWidget(unit)
-        layout.addWidget(self.length_box)
-        self.range_label = label("", "Note")
-        layout.addWidget(self.range_label)
-
-        layout.addSpacing(6)
-        layout.addLayout(_step(2, "วิธีตัด"))
-        self.mode_seg = Segmented()
-        self.mode_seg.setFixedHeight(theme.CONTROL_HEIGHT)
-        self.mode_seg.add("เร็ว", 0)
-        self.mode_seg.add("แม่นยำ", 1)
-        self.mode_seg.group.button(0).setChecked(True)
-        self.mode_seg.group.idToggled.connect(lambda _id, on: on and self._refresh())
-        layout.addWidget(self.mode_seg)
-        self.mode_note = label("", "Note", wrap=True)
-        layout.addWidget(self.mode_note)
-
-        layout.addSpacing(6)
-        layout.addLayout(_step(3, "บันทึกที่"))
-        self.folder_edit = QLineEdit()
-        self.folder_edit.setPlaceholderText("เลือกโฟลเดอร์ปลายทาง")
-        self._folder_action = self.folder_edit.addAction(theme.themed_icon("folder"),
-                                                         QLineEdit.ActionPosition.LeadingPosition)
-        self.folder_edit.textChanged.connect(lambda _t: self._refresh())
-        folder_btn = QPushButton("เลือก…")
-        folder_btn.setObjectName("FieldButton")
-        folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        folder_btn.clicked.connect(self.choose_folder)
-        folder_row = QHBoxLayout()
-        folder_row.setSpacing(10)
-        folder_row.addWidget(self.folder_edit, 1)
-        folder_row.addWidget(folder_btn)
-        layout.addLayout(folder_row)
-
-        layout.addSpacing(6)
-        layout.addLayout(_step(4, "ชื่อไฟล์"))
-        self.name_field = NameField()
-        self.name_field.changed.connect(self._refresh_summary)
-        layout.addWidget(self.name_field)
-        return frame
-
-    def _build_timeline(self) -> QWidget:
-        frame = QWidget()
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(0, 4, 0, 0)
-        layout.setSpacing(2)
         self.timeline = TrimTimeline()
         self.timeline.selection_changed.connect(self._on_selection)
         self.timeline.seek_requested.connect(self._seek)
@@ -540,12 +515,112 @@ class FastCutPage(QWidget):
         layout.addLayout(ends)
         return frame
 
-    # --- state ------------------------------------------------------------------------------------------
-    def _precise(self) -> bool:
-        return self._has_video and self.mode_seg.group.checkedId() == 1
+    def _build_settings(self) -> QFrame:
+        frame, layout = card(spacing=0, margins=(22, 18, 22, 20))
+        columns = Columns(breakpoint=700)
+        layout.addWidget(columns)
 
+        left = QVBoxLayout()
+        left.setSpacing(10)
+        left.addLayout(_step(1, "ความยาวที่ตัด"))
+        length_box = QFrame()
+        length_box.setObjectName("Control")
+        length_box.setFixedHeight(theme.CONTROL_HEIGHT)
+        length_row = QHBoxLayout(length_box)
+        length_row.setContentsMargins(6, 0, 14, 0)
+        length_row.setSpacing(6)
+        self.minus_btn = QPushButton()
+        self.plus_btn = QPushButton()
+        for button, icon, step in ((self.minus_btn, "minus", -1), (self.plus_btn, "plus", 1)):
+            button.setObjectName("StepButton")
+            button.setFixedSize(34, 34)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setAutoRepeat(True)
+            button.setProperty("icon_key", icon)
+            button.clicked.connect(lambda _c=False, s=step: self._nudge_length(s))
+        self.length_edit = QLineEdit(f"{DEFAULT_LENGTH:g}")
+        self.length_edit.setObjectName("KbpsEdit")
+        self.length_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        validator = QDoubleValidator(0.5, 99999, 1)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        self.length_edit.setValidator(validator)
+        self.length_edit.editingFinished.connect(self._on_length_typed)
+        unit = QLabel("วินาที")
+        unit.setObjectName("Unit")
+        length_row.addWidget(self.minus_btn)
+        length_row.addWidget(self.length_edit, 1)
+        length_row.addWidget(self.plus_btn)
+        length_row.addWidget(unit)
+        left.addWidget(length_box)
+        left.addSpacing(14)
+        left.addLayout(_step(3, "บันทึกที่"))
+        self.folder_edit = QLineEdit()
+        self.folder_edit.setPlaceholderText("เลือกโฟลเดอร์ปลายทาง")
+        self._folder_action = self.folder_edit.addAction(theme.themed_icon("folder"),
+                                                         QLineEdit.ActionPosition.LeadingPosition)
+        self.folder_edit.textChanged.connect(lambda _t: self._refresh())
+        folder_btn = QPushButton("เลือก…")
+        folder_btn.setObjectName("FieldButton")
+        folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        folder_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        folder_btn.clicked.connect(self.choose_folder)
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(10)
+        folder_row.addWidget(self.folder_edit, 1)
+        folder_row.addWidget(folder_btn)
+        left.addLayout(folder_row)
+
+        right = QVBoxLayout()
+        right.setSpacing(10)
+        right.addLayout(_step(2, "คุณภาพพรีวิว"))
+        self.preview_seg = Segmented()
+        self.preview_seg.setFixedHeight(theme.CONTROL_HEIGHT)
+        for seg_id, text in PREVIEW_LABELS.items():
+            self.preview_seg.add(text, seg_id).setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        saved = int(QSettings("ClipHUB", "ClipHUB").value(SETTINGS_KEY, 0) or 0)
+        self.preview_seg.group.button(saved if saved in PREVIEW_SCALES else 0).setChecked(True)
+        self.preview_seg.group.idToggled.connect(lambda seg_id, on: on and self._on_preview_scale(seg_id))
+        right.addWidget(self.preview_seg)
+        right.addSpacing(14)
+        right.addLayout(_step(4, "ชื่อไฟล์"))
+        self.name_field = NameField()
+        self.name_field.changed.connect(self._refresh_summary)
+        right.addWidget(self.name_field)
+
+        columns.left.addLayout(left)
+        columns.right.addLayout(right)
+        theme.on_change(self._refresh_icons)
+        return frame
+
+    def _refresh_icons(self) -> None:
+        for button in (self.minus_btn, self.plus_btn):
+            button.setIcon(theme.themed_icon(button.property("icon_key"), "text", 14, 2.4))
+        self._folder_action.setIcon(theme.themed_icon("folder"))
+        self.play_btn.update()
+        self.timeline.update()
+        self.view.update()
+
+    def _bind_keys(self) -> None:
+        """Shortcuts work while this page shows; a text field keeps its own keys while typing."""
+        bindings = [
+            ("Space", self.toggle_play),
+            ("Left", lambda: self._move_box(-1)), ("A", lambda: self._move_box(-1)),
+            ("Right", lambda: self._move_box(1)), ("D", lambda: self._move_box(1)),
+            ("Shift+Left", lambda: self._move_box(-5)), ("Shift+A", lambda: self._move_box(-5)),
+            ("Shift+Right", lambda: self._move_box(5)), ("Shift+D", lambda: self._move_box(5)),
+        ]
+        for keys, handler in bindings:
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(handler)
+
+    # --- state ------------------------------------------------------------------------------------------
     def _ext(self) -> str:
-        return output_ext(self._path or "a.mp4", self._precise())
+        return output_ext(self._path or "a.mp4", precise=True)
+
+    def _scale(self) -> int:
+        return PREVIEW_SCALES.get(self.preview_seg.group.checkedId(), 1)
 
     def _set_notice(self, message: str) -> None:
         self.notice.setText(message)
@@ -553,13 +628,7 @@ class FastCutPage(QWidget):
 
     def _refresh(self) -> None:
         ready = self._path is not None and self._duration > 0
-        self.mode_seg.setEnabled(self._has_video)
-        if not self._has_video:
-            self.mode_note.setText("ไฟล์เสียงตัดได้ตรงจุดและเร็วเสมอ")
-        elif self._precise():
-            self.mode_note.setText("เริ่มตรงเฟรมที่เลือก · เข้ารหัสภาพใหม่ ใช้เวลานานขึ้น")
-        else:
-            self.mode_note.setText("เสร็จในไม่กี่วินาที ไม่เข้ารหัสใหม่ · จุดเริ่มอาจเร็วกว่าที่เลือกเล็กน้อย")
+        self.preview_seg.setEnabled(self._has_video)
         self.name_field.set_extension(self._ext())
         self.export_btn.setEnabled(ready and bool(self.folder_edit.text().strip()))
         self._refresh_summary()
@@ -568,14 +637,11 @@ class FastCutPage(QWidget):
         if not self._path or self._duration <= 0:
             self.action_bar.set_summary("")
             return
-        length = self.timeline.end - self.timeline.start
-        self.action_bar.set_summary(f"{format_time(length)} · {self._ext().upper()}")
+        self.action_bar.set_summary(f"{format_time(self.timeline.start)} – {format_time(self.timeline.end)}")
 
     def _on_selection(self, start: float, end: float) -> None:
-        length = end - start
         if not self.length_edit.hasFocus():
-            self.length_edit.setText(f"{length:.1f}".rstrip("0").rstrip("."))
-        self.range_label.setText(f"{format_time(start)} – {format_time(end)} · {length:.1f} วินาที")
+            self.length_edit.setText(f"{end - start:.1f}".rstrip("0").rstrip("."))
         self._refresh_summary()
 
     def _on_length_typed(self) -> None:
@@ -589,6 +655,12 @@ class FastCutPage(QWidget):
     def _nudge_length(self, step: int) -> None:
         self.timeline.set_selection(self.timeline.start, self.timeline.end + step)
 
+    def _move_box(self, seconds: float) -> None:
+        if self._duration <= 0 or self.editor_card.isHidden():
+            return
+        self.timeline.move_by(seconds)
+        self._seek(self.timeline.start)
+
     def choose_folder(self) -> None:
         start = self.folder_edit.text().strip() or str(Path.home())
         chosen = QFileDialog.getExistingDirectory(self, "เลือกโฟลเดอร์ปลายทาง", start)
@@ -597,12 +669,13 @@ class FastCutPage(QWidget):
             self.name_field.set_default(self._suggested_stem())
 
     def _suggested_stem(self) -> str:
-        return suggest_cut_output(self._path, self.folder_edit.text().strip(), self._precise(), self._reserved).stem
+        return suggest_cut_output(self._path, self.folder_edit.text().strip(), True, self._reserved).stem
 
     # --- file -----------------------------------------------------------------------------------------------
     def set_input_file(self, path: str) -> None:
         self._set_notice("")
         self._stop()
+        self._cancel_proxy()
         self._path = path
         self._duration = 0.0
         self._has_video = not is_audio(path)
@@ -617,8 +690,8 @@ class FastCutPage(QWidget):
             self.folder_edit.setText(os.path.dirname(path))
         self.name_field.edited = False
         self.name_field.set_default(self._suggested_stem())
-        if self.preview_card.isHidden():
-            pop_in(self.preview_card)
+        if self.editor_card.isHidden():
+            pop_in(self.editor_card)
             pop_in(self.settings_card, delay=110)
         self._refresh()
         loader = _Loader(path, self)
@@ -638,8 +711,10 @@ class FastCutPage(QWidget):
         self.timeline.playhead = 0.0
         self.timeline.set_selection(0.0, min(DEFAULT_LENGTH, duration))
         self.total_label.setText(format_time(duration, tenths=False))
-        self.time_label.setText(f"0:00.0 / {format_time(duration)}")
-        self._load_player(path)
+        self._play_source(path)
+        self._seek(0.0)
+        if has_video and self._scale() > 1:
+            self._make_proxy()
         self._refresh()
 
     def _on_failed(self, path: str, message: str) -> None:
@@ -648,6 +723,44 @@ class FastCutPage(QWidget):
         self.time_label.setText("")
         self._set_notice(message)
         self._refresh()
+
+    # --- preview quality (proxy) -----------------------------------------------------------------------------
+    def _on_preview_scale(self, seg_id: int) -> None:
+        QSettings("ClipHUB", "ClipHUB").setValue(SETTINGS_KEY, seg_id)
+        if not self._path or not self._has_video or self._duration <= 0:
+            return
+        self._cancel_proxy()
+        if self._scale() == 1:
+            self._play_source(self._path, keep_position=True)
+        else:
+            self._make_proxy()
+        self._seek(self.timeline.playhead)
+
+    def _make_proxy(self) -> None:
+        maker = _ProxyMaker(self._path, self._scale(), self._duration, self)
+        maker.progress.connect(self._on_proxy_progress)
+        maker.ready.connect(self._on_proxy_ready)
+        maker.finished.connect(maker.deleteLater)
+        self._proxy = maker
+        maker.start()
+
+    def _cancel_proxy(self) -> None:
+        if self._proxy is not None:
+            try:
+                self._proxy.cancelled = True
+            except RuntimeError:
+                pass
+            self._proxy = None
+
+    def _on_proxy_progress(self, source: str, percent: int) -> None:
+        if source == self._path and not self._playing():
+            self.time_label.setText(f"{PREVIEW_LABELS[self.preview_seg.group.checkedId()]} {percent}%")
+
+    def _on_proxy_ready(self, source: str, scale: int, proxy: str) -> None:
+        if source != self._path or scale != self._scale():
+            return
+        self._play_source(proxy, keep_position=True)
+        self._show_time(self.timeline.playhead)
 
     # --- playback ----------------------------------------------------------------------------------------
     def _ensure_player(self):
@@ -660,16 +773,24 @@ class FastCutPage(QWidget):
             self._player.setVideoSink(self._sink)
             self._sink.videoFrameChanged.connect(self.view.set_frame)
             self._player.positionChanged.connect(self._on_position)
-            self._player.playbackStateChanged.connect(lambda _s: self._refresh_play_icon())
+            self._player.playbackStateChanged.connect(lambda _s: self.play_btn.set_playing(self._playing()))
         return self._player
 
-    def _load_player(self, path: str) -> None:
+    def _play_source(self, path: str, keep_position: bool = False) -> None:
         try:
             player = self._ensure_player()
         except ImportError:
             return
+        if path == self._source:
+            return
+        playing = self._playing()
+        position = player.position()
+        self._source = path
         player.setSource(QUrl.fromLocalFile(path))
-        self._seek(0.0)  # shows the first frame
+        if keep_position:
+            player.setPosition(position)
+            if playing:
+                player.play()
 
     def _playing(self) -> bool:
         if self._player is None:
@@ -678,19 +799,19 @@ class FastCutPage(QWidget):
         return self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
 
     def toggle_play(self) -> None:
-        if self._player is None or self._duration <= 0:
+        if self._player is None or self._duration <= 0 or self.editor_card.isHidden():
             return
         if self._playing():
             self._player.pause()
             return
-        head = self.timeline.playhead
-        if not (self.timeline.start <= head < self.timeline.end - 0.05):
+        if not (self.timeline.start <= self.timeline.playhead < self.timeline.end - 0.05):
             self._seek(self.timeline.start)
         self._player.play()
 
     def _stop(self) -> None:
         if self._player is not None:
             self._player.stop()
+            self._source = ""
 
     def _seek(self, seconds: float) -> None:
         self.timeline.set_playhead(seconds)
@@ -705,10 +826,10 @@ class FastCutPage(QWidget):
     def _grab_frame(self) -> None:
         if self._path is None or self._grab_at < 0:
             return
-        if self._grabber is not None and self._grabber.isRunning():
+        if self._grabber is not None:
             self._grab_timer.start()  # one at a time; try again shortly with the newest position
             return
-        self._grabber = _FrameGrab(self._path, self._grab_at, self)
+        self._grabber = _FrameGrab(self._source or self._path, self._grab_at, 1920 // self._scale(), self)
         self._grabber.grabbed.connect(self._on_grabbed)
         self._grabber.finished.connect(self._on_grab_finished)
         self._grab_at = -1.0
@@ -722,34 +843,47 @@ class FastCutPage(QWidget):
             worker.deleteLater()
 
     def _on_grabbed(self, path: str, _seconds: float, image: QImage) -> None:
-        if path == self._path and not self._playing():
+        if path in (self._path, self._source) and not self._playing():
             self.view.set_image(image)
 
     def _on_position(self, ms: int) -> None:
         seconds = ms / 1000
-        if self._playing() and seconds >= self.timeline.end:  # loop the chosen part, like a story clip
+        if self._playing() and seconds >= self.timeline.end:  # loop the chosen part
             self._player.setPosition(int(self.timeline.start * 1000))
             seconds = self.timeline.start
-        self.timeline.set_playhead(seconds)
-        self._show_time(seconds)
+        if self._playing():
+            self.timeline.set_playhead(seconds)
+            self._show_time(seconds)
 
     def _show_time(self, seconds: float) -> None:
         if self._duration > 0:
             self.time_label.setText(f"{format_time(seconds)} / {format_time(self._duration)}")
 
-    def _refresh_play_icon(self) -> None:
-        self.play_btn.set_playing(self._playing())
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        self._fit_preview()
 
-    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        if event.key() == Qt.Key.Key_Space and not self.length_edit.hasFocus():
-            self.toggle_play()
-            return
-        super().keyPressEvent(event)
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().showEvent(event)
+        self._fit_preview()
+
+    def _fit_preview(self) -> None:
+        """Preview as tall as the window allows while the whole timeline stays on screen."""
+        window = self.window()
+        if window is not None:
+            self.view.set_limit(window.height() - 500)
 
     def hideEvent(self, event) -> None:  # noqa: N802 (Qt API)
         if self._playing():
             self._player.pause()  # leaving the page stops the sound
         super().hideEvent(event)
+
+    def _shutdown(self) -> None:
+        self._cancel_proxy()
+        self._stop()
+        for worker in list(self._loaders):
+            worker.wait(2000)
+        shutil.rmtree(PROXY_DIR, ignore_errors=True)
 
     # --- submit -------------------------------------------------------------------------------------------------
     def _output_path(self) -> Path:
@@ -763,10 +897,9 @@ class FastCutPage(QWidget):
             return
         output = self._output_path()
         self._reserved.add(str(output))
-        task = FastCutTask(self._path, str(output), self.timeline.start, self.timeline.end, self._precise())
+        # Always frame-accurate: a short clip re-encodes in seconds (on the GPU when there is one).
+        task = FastCutTask(self._path, str(output), self.timeline.start, self.timeline.end, precise=True)
         self.task_submitted.emit(task)
         self.action_bar.flash("เพิ่มเข้าคิวแล้ว ✓")
         self.name_field.edited = False
         self.name_field.set_default(self._suggested_stem())
-
-

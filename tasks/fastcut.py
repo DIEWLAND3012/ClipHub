@@ -90,7 +90,7 @@ _MUXERS = {"mp4": "mp4", "m4v": "mp4", "mov": "mov", "mkv": "matroska", "webm": 
 
 class FastCutTask(BaseMediaTask):
     kind: ClassVar[str] = "fastcut"
-    title: ClassVar[str] = "FastCut"
+    title: ClassVar[str] = "ตัดคลิป"
 
     def __init__(self, input_path: str, output_path: str, start: float, end: float, precise: bool = False) -> None:
         super().__init__(input_path, output_path)
