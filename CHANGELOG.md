@@ -4,6 +4,11 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-11-17
+
+### Fixed
+- The startup chime (assets/sounds/startup.wav) is now in the repo, so the released .exe and .dmg play it on the boot screen.
+
 ## [2.0.0] - 2026-11-17
 
 A new ClipHUB: liquid-glass redesign, step-by-step tools, GPU acceleration, Thai/English, accurate song subtitles.

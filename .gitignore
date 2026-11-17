@@ -8,5 +8,3 @@ bin/
 *.part
 .DS_Store
 
-# Startup chime: the user's local file (Apple's Mac startup sound is not ours to redistribute)
-assets/sounds/*.wav
