@@ -4,6 +4,15 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Start-up and sizing
+- Boot screen like a Mac starting up (black, the ClipHUB mark, a thin progress bar) that does real work while it shows: loads yt-dlp and Whisper and tests the GPUs, then cross-fades into the window. Plays assets/sounds/startup.wav when present (kept out of git).
+- The window opens at about two thirds of the screen, centred, instead of a fixed large size.
+
+### Fixed
+- Narrow windows clipped the right column and the drop zone; columns now stack below and every box shrinks with the window.
+- Long file names (e.g. Japanese titles) widened the subtitle page; they now shorten with an ellipsis.
+- Turning the GPU switch off and on squashed the Performance popup; it now resizes smoothly.
+
 ### Layout
 - The queue is no longer a column: a "คิวงาน" button with a job count (above "ประสิทธิภาพ" in the sidebar, Ctrl+J) opens it as a popup; the progress pill opens it too.
 - Pages use the freed width in two columns and fit without scrolling at the default window size; columns stack on narrow windows.

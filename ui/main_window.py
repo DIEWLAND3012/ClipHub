@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, QThread, QTimer
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
@@ -42,6 +42,7 @@ APP_VERSION = "v1.1"
 QUEUE_WIDTH = 340
 CONTENT_MAX_WIDTH = 1120
 COMPACT_SIDEBAR_WIDTH = 940   # below this the sidebar shows icons only
+MIN_SIZE = (720, 560)
 SHUTDOWN_WAIT_SECONDS = 5.0
 STILL_STOPPING_TEXT = (
     "งานที่กำลังทำยังหยุดไม่เสร็จ (เช่น กำลังดึงข้อมูลวิดีโอ หรือโหลดโมเดล AI)\n"
@@ -63,12 +64,24 @@ class _Scrim(QWidget):
         self._on_click()
 
 
+def default_window_rect() -> QRect:
+    """Comfortable opening size (about 2/3 of the usable screen, at most 1080 x 720), centred."""
+    screen = QGuiApplication.primaryScreen()
+    if screen is None:
+        return QRect(100, 100, 1000, 680)
+    area = screen.availableGeometry()
+    width = max(MIN_SIZE[0], min(1080, round(area.width() * 0.66)))
+    height = max(MIN_SIZE[1], min(720, round(area.height() * 0.82)))
+    return QRect(area.center().x() - width // 2, area.center().y() - height // 2, width, height)
+
+
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, hardware: hwaccel.HardwareReport | None = None) -> None:
+        """`hardware` is the report the boot screen already made; without it the GPUs are probed here."""
         super().__init__()
         self.setWindowTitle("ClipHUB")
-        self.setMinimumSize(760, 600)
-        self.resize(1260, 830)
+        self.setMinimumSize(*MIN_SIZE)
+        self.setGeometry(default_window_rect())
         self.queue = TaskQueue(self)
         self.pages: list[QWidget] = []
         self.stack = QStackedWidget()
@@ -99,6 +112,7 @@ class MainWindow(QMainWindow):
         self.perf = PerformancePanel(central)
         self.perf.close_requested.connect(lambda: self.set_perf_open(False))
         self.perf.settings_changed.connect(self._configure_queue)
+        self.perf.size_changed.connect(self._resize_perf_popup)
         self.toasts = ToastHost(central)
         set_host(self.toasts)
         self.pill = ProgressPill(
@@ -110,7 +124,10 @@ class MainWindow(QMainWindow):
         # Find out which GPUs really work (a few seconds of test encodes) without blocking the window.
         self._probe = HardwareProbe(self)
         self._probe.done.connect(self._on_hardware)
-        QTimer.singleShot(300, self._probe.start)
+        if hardware is None:
+            QTimer.singleShot(300, self._probe.start)
+        else:
+            QTimer.singleShot(0, lambda: self._on_hardware(hardware))
 
         self.queue.task_done.connect(self._toast_done)
         self.queue.task_failed.connect(self._toast_failed)
@@ -181,9 +198,9 @@ class MainWindow(QMainWindow):
         self.actions_stack.setCurrentIndex(index)
         # A stacked widget is as tall as its tallest page; only the visible page should count,
         # so short pages never scroll because of a long one.
-        for i in range(self.stack.count()):
+        for i in range(self.stack.count()):  # width and height: hidden pages never stretch the window
             policy = QSizePolicy.Policy.Preferred if i == index else QSizePolicy.Policy.Ignored
-            self.stack.widget(i).setSizePolicy(QSizePolicy.Policy.Preferred, policy)
+            self.stack.widget(i).setSizePolicy(policy, policy)
         self.stack.adjustSize()
         for widget in (self.stack.widget(index), self.actions_stack.widget(index)):
             if widget is not None and self.isVisible():
@@ -245,7 +262,6 @@ class MainWindow(QMainWindow):
         return QRect(x, self._central.height() - height - 10, width, height)
 
     def _perf_height(self) -> int:
-        self.perf.adjustSize()
         return min(self.perf.sizeHint().height(), self._central.height() - 20)
 
     def _open_popup(self, panel: QWidget, rect: QRect) -> None:
@@ -286,6 +302,18 @@ class MainWindow(QMainWindow):
             self.perf.hide()
             if not self.rail.isVisible():
                 self.scrim.hide()
+
+    def _resize_perf_popup(self) -> None:
+        """Glide the open performance popup to the height its content needs (bottom stays put)."""
+        if not self.perf.isVisible():
+            return
+        target = self._popup_rect(PerformancePanel.WIDTH, self._perf_height())
+        grow = QPropertyAnimation(self.perf, b"geometry", self.perf)
+        grow.setDuration(220)
+        grow.setStartValue(self.perf.geometry())
+        grow.setEndValue(target)
+        grow.setEasingCurve(QEasingCurve.Type.OutCubic)
+        grow.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _close_overlays(self) -> None:
         self.set_perf_open(False)

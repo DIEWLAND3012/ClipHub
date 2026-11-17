@@ -26,7 +26,7 @@ from core.errors import ClipHubError
 from tasks.subtitle import Cue, SubtitleTask, format_srt_time, write_subtitles
 from ui import overlays, theme
 from ui.theme import repolish
-from ui.widgets import ActionBar, Columns, DropZone, GlassCard, PageDrop, Segmented, page_header, pop_in, primary_button
+from ui.widgets import ActionBar, Columns, DropZone, ElidedLabel, GlassCard, PageDrop, Segmented, page_header, pop_in, primary_button
 
 AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"}
 VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
@@ -138,7 +138,8 @@ class SubtitlePage(QWidget):
         self._thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         meta = QVBoxLayout()
         meta.setSpacing(2)
-        self._file_name = _label("ยังไม่ได้เลือกไฟล์", "FileName")
+        self._file_name = ElidedLabel("ยังไม่ได้เลือกไฟล์", Qt.TextElideMode.ElideMiddle)  # long names shorten
+        self._file_name.setObjectName("FileName")
         self._file_meta = _label("", "FileMeta")
         meta.addWidget(self._file_name)
         meta.addWidget(self._file_meta)
@@ -229,7 +230,7 @@ class SubtitlePage(QWidget):
             size_text = _format_size(source.stat().st_size)
         except OSError:
             size_text = ""
-        self._file_name.setText(source.name)
+        self._file_name.set_full_text(source.name)
         self._file_name.setToolTip(str(source))
         self._file_meta.show()
         self._file_meta.setText(f"{kind} · {source.suffix.lstrip('.').upper() or 'ไม่ทราบชนิด'}")

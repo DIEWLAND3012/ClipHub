@@ -578,12 +578,29 @@ class Columns(QWidget):
         self._box.addLayout(self.left, stretch[0])
         self._box.addLayout(self.right, stretch[1])
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        super().resizeEvent(event)
-        wide = self.width() >= self.breakpoint
+    def _side_by_side_width(self) -> int:
+        """Narrowest width at which both columns still fit next to each other."""
+        return self.left.minimumSize().width() + self.right.minimumSize().width() + self._box.spacing()
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        # Never demand room for both columns: below that width they stack instead of being clipped.
+        width = max(self.left.minimumSize().width(), self.right.minimumSize().width())
+        return QSize(width, super().minimumSizeHint().height())
+
+    def _update_direction(self) -> None:
+        wide = self.width() >= max(self.breakpoint, self._side_by_side_width())
         direction = QBoxLayout.Direction.LeftToRight if wide else QBoxLayout.Direction.TopToBottom
         if self._box.direction() != direction:
             self._box.setDirection(direction)
+            self.updateGeometry()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        self._update_direction()
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().showEvent(event)
+        self._update_direction()
 
 
 class ActionBar(QWidget):

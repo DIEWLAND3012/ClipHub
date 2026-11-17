@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QListView, QPushButton, QV
 from core import hwaccel
 from core.hwaccel import Engine, HardwareReport
 from ui import theme
-from ui.widgets import GlassCard, label, reveal
+from ui.widgets import GlassCard, fade_in, label
 
 ALL_GPUS = "all"
 
@@ -32,6 +32,7 @@ class HardwareProbe(QThread):
 class PerformancePanel(GlassCard):
     settings_changed = Signal()
     close_requested = Signal()
+    size_changed = Signal()  # the popup must grow / shrink to fit
 
     WIDTH = 360
 
@@ -103,11 +104,11 @@ class PerformancePanel(GlassCard):
         return [e for e in gpus if e.key == choice] or gpus
 
     def _on_switch(self, on: bool) -> None:
+        self.gpu_box.setVisible(on)
         if on:
-            reveal(self.gpu_box, 260)
-        else:
-            self.gpu_box.hide()
-        self.adjustSize()
+            fade_in(self.gpu_box, 220)
+        self.layout().activate()
+        self.size_changed.emit()  # MainWindow animates the popup to its new height
         self._save()
 
     def _save(self) -> None:
@@ -151,4 +152,5 @@ class PerformancePanel(GlassCard):
             notes.append("ซับไตเติล AI ใช้ GPU (CUDA)")
         self.note.setText("\n".join(notes))
         self.note.setVisible(bool(notes))
-        self.adjustSize()
+        self.layout().activate()
+        self.size_changed.emit()
