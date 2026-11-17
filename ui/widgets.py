@@ -348,6 +348,9 @@ class Segmented(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("Segmented")
+        # Height comes from the control, never from spare room in the layout: the buttons are sized to
+        # the control's height, so a stretchable height would keep growing.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
         self._row = QHBoxLayout(self)

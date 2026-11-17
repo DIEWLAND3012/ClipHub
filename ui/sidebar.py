@@ -99,6 +99,7 @@ class Sidebar(GlassCard):
         manager = theme.manager()
         self._appearance = manager.appearance if manager is not None else "system"
         self.appearance = Segmented()
+        self.appearance.setFixedHeight(40)  # never stretched by a tall (full-screen) sidebar
         for index, key in enumerate(theme.APPEARANCES):
             button = self.appearance.add("", index, APPEARANCE_ICONS[key], theme.APPEARANCE_LABELS[key])
             button.setIconSize(QSize(16, 16))

@@ -4,7 +4,11 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed
+- The theme switch in the sidebar grew very tall in full screen and its thumb slipped out after a theme change; segmented controls now keep a fixed height.
+
 ### FastCut (new tool)
+- Bigger preview: on wide windows the picture fills its column and the settings sit beside it (no black bars); on narrow ones the settings move below the timeline. The play button sits beside the timeline and the time is shown on the picture.
 - A fifth tool, between Compress and Subtitles: cut part of a video or a song. The preview plays with a playhead; the timeline shows the sound as bars under a gradient box, picked the way Instagram picks a music clip: drag the box, stretch either edge, or type the length (default 20 s). The chosen part plays on a loop.
 - Thai name ตัดคลิป (FastCut in English). The editor (preview, play button, timeline) spans the full width at every window size; the preview height follows the window so the timeline always fits. Settings sit below it.
 - Cuts are always frame-accurate (video re-encoded on the GPU when there is one; audio stream-copied).

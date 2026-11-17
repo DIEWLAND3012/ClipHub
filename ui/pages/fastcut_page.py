@@ -31,7 +31,7 @@ from tasks.fastcut import MIN_LENGTH, FastCutTask, format_time, is_audio, output
 from tasks.fastcut import suggest_output_path as suggest_cut_output
 from ui import theme
 from ui.widgets import (
-    ActionBar, Columns, DropZone, ElidedLabel, NameField, PageDrop, Segmented, card, field_label, label,
+    ActionBar, DropZone, ElidedLabel, NameField, PageDrop, Segmented, card, field_label, label,
     page_header, pop_in, primary_button,
 )
 
@@ -42,6 +42,7 @@ PREVIEW_SCALES = {0: 1, 1: 2, 2: 4, 3: 8}  # segment id -> divide the picture by
 PREVIEW_LABELS = {0: "Full", 1: "1/2", 2: "1/4", 3: "1/8"}
 PROXY_DIR = Path(tempfile.gettempdir()) / "cliphub-preview"
 SETTINGS_KEY = "fastcut/preview_scale"
+SIDE_BY_SIDE = 860  # editor width from which the settings sit beside the picture
 
 
 def _step(number: int, text: str) -> QHBoxLayout:
@@ -148,7 +149,7 @@ class _ProxyMaker(QThread):
 class VideoView(QWidget):
     """The current video frame, letterboxed in a rounded black panel (a music mark for audio)."""
 
-    MAX_H = 420
+    MAX_H = 720
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -158,6 +159,11 @@ class VideoView(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._image = QImage()
         self.audio_only = False
+        self.time_text = ""
+
+    def set_time(self, text: str) -> None:
+        self.time_text = text
+        self.update()
 
     def sizeHint(self) -> QSize:  # noqa: N802 (Qt API)
         return QSize(640, self.limit)
@@ -198,14 +204,25 @@ class VideoView(QWidget):
             painter.fillPath(clip, theme.color("accent", 0.12))
             icon = theme.icon_pixmap("music", theme.hex_color("accent"), 56, 1.8)
             painter.drawPixmap(int(rect.center().x() - 28), int(rect.center().y() - 28), icon)
-            return
-        painter.fillRect(rect, QColor("#000000"))
-        if self._image.isNull():
-            return
-        size = self._image.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
-        target = QRectF((self.width() - size.width()) / 2, (self.height() - size.height()) / 2,
-                        size.width(), size.height())
-        painter.drawImage(target, self._image)
+        else:
+            painter.fillRect(rect, QColor("#000000"))
+            if not self._image.isNull():
+                size = self._image.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
+                target = QRectF((self.width() - size.width()) / 2, (self.height() - size.height()) / 2,
+                                size.width(), size.height())
+                painter.drawImage(target, self._image)
+        if self.time_text:
+            font = painter.font()
+            font.setPixelSize(12)
+            font.setFamilies([name.strip().strip('"') for name in theme.MONO.split(",")])
+            painter.setFont(font)
+            width = painter.fontMetrics().horizontalAdvance(self.time_text) + 16
+            pill = QRectF(rect.right() - width - 10, rect.bottom() - 32, width, 22)
+            path = QPainterPath()
+            path.addRoundedRect(pill, 11, 11)
+            painter.fillPath(path, QColor(0, 0, 0, 150))
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, self.time_text)
 
 
 class PlayButton(QPushButton):
@@ -248,7 +265,7 @@ class TrimTimeline(QWidget):
     BAR_W = 3.0
     GAP = 4.0
     HANDLE = 12.0  # width of a handle
-    BOX_H = 84.0
+    BOX_H = 72.0
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -468,60 +485,70 @@ class FastCutPage(QWidget):
         col.addWidget(self.notice)
 
         self.editor_card = self._build_editor()     # full width at every window size
-        self.settings_card = self._build_settings()
         col.addWidget(self.editor_card)
-        col.addWidget(self.settings_card)
         col.addStretch(1)
-        for widget in (self.editor_card, self.settings_card):
-            widget.hide()
+        self.editor_card.hide()
 
         self.action_bar = ActionBar()
         self.export_btn = self.action_bar.add_button(primary_button("Export", "fastcut"))
         self.export_btn.clicked.connect(self._submit)
 
     def _build_editor(self) -> QFrame:
-        frame, layout = card(spacing=10, margins=(16, 16, 16, 12))
+        frame, layout = card(spacing=8, margins=(14, 14, 14, 12))
+        # Wide: the picture fills its column (no black bars) and the settings use the room beside it.
+        # Narrow: picture, then the timeline, then the settings, so the timeline is never pushed down.
+        top = QHBoxLayout()
+        top.setSpacing(18)
         self.view = VideoView()
-        layout.addWidget(self.view)
+        top.addWidget(self.view, 3)
+        self.side = QWidget()
+        self.side_layout = QVBoxLayout(self.side)
+        self.side_layout.setContentsMargins(0, 0, 0, 0)
+        top.addWidget(self.side, 2)
+        layout.addLayout(top)
+        self.settings = self._build_settings()
+        self.side_layout.addWidget(self.settings)
         row = QHBoxLayout()
-        row.setSpacing(12)
+        row.setSpacing(10)
         self.play_btn = PlayButton()
         self.play_btn.setToolTip("เล่น / หยุด (Space)")
         self.play_btn.clicked.connect(self.toggle_play)
-        self.file_name = ElidedLabel(mode=Qt.TextElideMode.ElideMiddle)
-        self.file_name.setObjectName("FileTitle")
-        self.time_label = QLabel("0:00.0")
-        self.time_label.setObjectName("TimeLabel")
-        change = QPushButton("เปลี่ยนไฟล์")
-        change.setCursor(Qt.CursorShape.PointingHandCursor)
-        change.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        change.clicked.connect(lambda: self.dropzone.browse())
-        row.addWidget(self.play_btn)
-        row.addWidget(self.file_name, 1)
-        row.addWidget(self.time_label)
-        row.addWidget(change)
-        layout.addLayout(row)
+        row.addWidget(self.play_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         self.timeline = TrimTimeline()
         self.timeline.selection_changed.connect(self._on_selection)
         self.timeline.seek_requested.connect(self._seek)
         self.timeline.drag_finished.connect(lambda: self._seek(self.timeline.start))  # play from the start
-        layout.addWidget(self.timeline)
-        ends = QHBoxLayout()
-        self.zero_label = label("0:00", "Note")
-        self.total_label = label("", "Note")
-        ends.addWidget(self.zero_label)
-        ends.addStretch(1)
-        ends.addWidget(self.total_label)
-        layout.addLayout(ends)
+        row.addWidget(self.timeline, 1)
+        layout.addLayout(row)
+        self.below = QVBoxLayout()
+        self.below.setContentsMargins(0, 8, 0, 0)
+        layout.addLayout(self.below)
         return frame
 
-    def _build_settings(self) -> QFrame:
-        frame, layout = card(spacing=0, margins=(22, 18, 22, 20))
-        columns = Columns(breakpoint=700)
-        layout.addWidget(columns)
+    def _place_settings(self) -> None:
+        wide = self.editor_card.width() >= SIDE_BY_SIDE
+        target = self.side_layout if wide else self.below
+        if self.settings.parentWidget() is not (self.side if wide else self.editor_card):
+            target.addWidget(self.settings)
+        self.side.setVisible(wide)
 
-        left = QVBoxLayout()
-        left.setSpacing(10)
+    def _build_settings(self) -> QWidget:
+        frame = QWidget()
+        left = QVBoxLayout(frame)
+        left.setContentsMargins(4, 0, 2, 0)
+        left.setSpacing(6)
+        file_row = QHBoxLayout()
+        file_row.setSpacing(10)
+        self.file_name = ElidedLabel(mode=Qt.TextElideMode.ElideMiddle)
+        self.file_name.setObjectName("FileTitle")
+        change = QPushButton("เปลี่ยนไฟล์")
+        change.setCursor(Qt.CursorShape.PointingHandCursor)
+        change.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        change.clicked.connect(lambda: self.dropzone.browse())
+        file_row.addWidget(self.file_name, 1)
+        file_row.addWidget(change)
+        left.addLayout(file_row)
+        left.addSpacing(4)
         left.addLayout(_step(1, "ความยาวที่ตัด"))
         length_box = QFrame()
         length_box.setObjectName("Control")
@@ -553,7 +580,8 @@ class FastCutPage(QWidget):
         length_row.addWidget(self.plus_btn)
         length_row.addWidget(unit)
         left.addWidget(length_box)
-        left.addSpacing(14)
+        left.addLayout(_step(2, "คุณภาพพรีวิว"))
+        left.addWidget(self._build_preview_seg())
         left.addLayout(_step(3, "บันทึกที่"))
         self.folder_edit = QLineEdit()
         self.folder_edit.setPlaceholderText("เลือกโฟลเดอร์ปลายทาง")
@@ -570,10 +598,15 @@ class FastCutPage(QWidget):
         folder_row.addWidget(self.folder_edit, 1)
         folder_row.addWidget(folder_btn)
         left.addLayout(folder_row)
+        left.addLayout(_step(4, "ชื่อไฟล์"))
+        self.name_field = NameField()
+        self.name_field.changed.connect(self._refresh_summary)
+        left.addWidget(self.name_field)
+        left.addStretch(1)
+        theme.on_change(self._refresh_icons)
+        return frame
 
-        right = QVBoxLayout()
-        right.setSpacing(10)
-        right.addLayout(_step(2, "คุณภาพพรีวิว"))
+    def _build_preview_seg(self) -> Segmented:
         self.preview_seg = Segmented()
         self.preview_seg.setFixedHeight(theme.CONTROL_HEIGHT)
         for seg_id, text in PREVIEW_LABELS.items():
@@ -581,25 +614,16 @@ class FastCutPage(QWidget):
         saved = int(QSettings("ClipHUB", "ClipHUB").value(SETTINGS_KEY, 0) or 0)
         self.preview_seg.group.button(saved if saved in PREVIEW_SCALES else 0).setChecked(True)
         self.preview_seg.group.idToggled.connect(lambda seg_id, on: on and self._on_preview_scale(seg_id))
-        right.addWidget(self.preview_seg)
-        right.addSpacing(14)
-        right.addLayout(_step(4, "ชื่อไฟล์"))
-        self.name_field = NameField()
-        self.name_field.changed.connect(self._refresh_summary)
-        right.addWidget(self.name_field)
-
-        columns.left.addLayout(left)
-        columns.right.addLayout(right)
-        theme.on_change(self._refresh_icons)
-        return frame
+        return self.preview_seg
 
     def _refresh_icons(self) -> None:
         for button in (self.minus_btn, self.plus_btn):
             button.setIcon(theme.themed_icon(button.property("icon_key"), "text", 14, 2.4))
         self._folder_action.setIcon(theme.themed_icon("folder"))
-        self.play_btn.update()
-        self.timeline.update()
-        self.view.update()
+        for name in ("play_btn", "timeline", "view"):  # may run before they exist
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.update()
 
     def _bind_keys(self) -> None:
         """Shortcuts work while this page shows; a text field keeps its own keys while typing."""
@@ -682,7 +706,7 @@ class FastCutPage(QWidget):
         self.dropzone.start_dir = os.path.dirname(path) or self.dropzone.start_dir
         self.dropzone.hide()
         self.file_name.set_full_text(os.path.basename(path))
-        self.time_label.setText("กำลังอ่านไฟล์…")
+        self.view.set_time("")
         self.view.audio_only = not self._has_video
         self.view.clear()
         self.timeline.set_media(0.0, [])
@@ -692,7 +716,6 @@ class FastCutPage(QWidget):
         self.name_field.set_default(self._suggested_stem())
         if self.editor_card.isHidden():
             pop_in(self.editor_card)
-            pop_in(self.settings_card, delay=110)
         self._refresh()
         loader = _Loader(path, self)
         loader.loaded.connect(self._on_loaded)
@@ -710,7 +733,6 @@ class FastCutPage(QWidget):
         self.timeline.set_media(duration, peaks)
         self.timeline.playhead = 0.0
         self.timeline.set_selection(0.0, min(DEFAULT_LENGTH, duration))
-        self.total_label.setText(format_time(duration, tenths=False))
         self._play_source(path)
         self._seek(0.0)
         if has_video and self._scale() > 1:
@@ -720,7 +742,7 @@ class FastCutPage(QWidget):
     def _on_failed(self, path: str, message: str) -> None:
         if path != self._path:
             return
-        self.time_label.setText("")
+        self.view.set_time("")
         self._set_notice(message)
         self._refresh()
 
@@ -754,7 +776,7 @@ class FastCutPage(QWidget):
 
     def _on_proxy_progress(self, source: str, percent: int) -> None:
         if source == self._path and not self._playing():
-            self.time_label.setText(f"{PREVIEW_LABELS[self.preview_seg.group.checkedId()]} {percent}%")
+            self.view.set_time(f"{PREVIEW_LABELS[self.preview_seg.group.checkedId()]} {percent}%")
 
     def _on_proxy_ready(self, source: str, scale: int, proxy: str) -> None:
         if source != self._path or scale != self._scale():
@@ -857,7 +879,7 @@ class FastCutPage(QWidget):
 
     def _show_time(self, seconds: float) -> None:
         if self._duration > 0:
-            self.time_label.setText(f"{format_time(seconds)} / {format_time(self._duration)}")
+            self.view.set_time(f"{format_time(seconds)} / {format_time(self._duration)}")
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
         super().resizeEvent(event)
@@ -869,9 +891,10 @@ class FastCutPage(QWidget):
 
     def _fit_preview(self) -> None:
         """Preview as tall as the window allows while the whole timeline stays on screen."""
+        self._place_settings()
         window = self.window()
         if window is not None:
-            self.view.set_limit(window.height() - 500)
+            self.view.set_limit(window.height() - 300)
 
     def hideEvent(self, event) -> None:  # noqa: N802 (Qt API)
         if self._playing():
