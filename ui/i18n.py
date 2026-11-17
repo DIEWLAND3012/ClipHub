@@ -120,6 +120,17 @@ EN: dict[str, str] = {
     "ขนาดโมเดลไม่ถูกต้อง เลือกได้เฉพาะ tiny, base หรือ small": "Invalid model size; choose tiny, base or small",
     "ไม่พบไลบรารี faster-whisper กรุณาติดตั้งด้วยคำสั่ง pip install faster-whisper": "faster-whisper is missing; install it with pip install faster-whisper",
     "GPU": "GPU",
+    "ตรวจจับอัตโนมัติ": "Detect automatically", "ภาษาญี่ปุ่น": "Japanese", "ภาษาเกาหลี": "Korean",
+    "ภาษาจีน": "Chinese", "เสียงในไฟล์": "Audio content", "เสียงพูด": "Speech", "เพลง": "Music",
+    "คลิป สัมภาษณ์ บรรยาย: กรองช่วงเงียบออก": "Clips, interviews, talks: silence is filtered out",
+    "เพลงและเสียงร้อง: ไม่ตัดช่วงที่มีดนตรี และไม่ให้ AI วนซ้ำเนื้อร้อง":
+        "Songs and singing: music isn't cut out and lyrics aren't repeated",
+    "เร็ว": "Fast", "พอใช้": "Fair", "ดี": "Good", "แม่นยำ · แนะนำ": "Accurate · recommended",
+    "แม่นยำที่สุด · ช้า": "Most accurate · slow",
+    "ครั้งแรกที่ใช้แต่ละโมเดลจะดาวน์โหลดก่อน (large ประมาณ 1.5–3 GB)":
+        "Each model downloads the first time it's used (large: about 1.5–3 GB)",
+    "ภาษาที่เลือกไม่รองรับ": "Unsupported language", "ขนาดโมเดลไม่ถูกต้อง": "Invalid model size",
+    "ประเภทเสียงไม่ถูกต้อง": "Invalid audio type",
     # queue, pill, toasts
     "ยังไม่มีงาน": "No jobs yet", "ล้าง": "Clear", "ล้างงานที่เสร็จแล้วออกจากคิว": "Remove finished jobs",
     "รอในคิว": "Waiting", "กำลังประมวลผล": "Working", "เสร็จแล้ว": "Done", "ผิดพลาด": "Failed",

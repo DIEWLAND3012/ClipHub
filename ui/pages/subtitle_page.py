@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.errors import ClipHubError
-from tasks.subtitle import Cue, SubtitleTask, format_srt_time, write_subtitles
+from tasks.subtitle import DEFAULT_MODEL, LANGUAGE_NAMES, Cue, SubtitleTask, format_srt_time, write_subtitles
 from ui import overlays, theme
 from ui.theme import repolish
 from ui.widgets import ActionBar, Columns, DropZone, ElidedLabel, GlassCard, PageDrop, Segmented, page_header, pop_in, primary_button
@@ -36,9 +36,11 @@ MEDIA_FILTER = (
     + ");;ทุกไฟล์ (*)"
 )
 
-LANGUAGES = (("th", "ไทย"), ("en", "English"))
-MODELS = (("tiny", "เร็วสุด"), ("base", "สมดุล"), ("small", "แม่นยำ"))
-DEFAULT_MODEL = "base"
+# Fastest to most accurate; large-v3-turbo is the default (accurate and still quick on a GPU).
+MODELS = (
+    ("tiny", "เร็วสุด"), ("base", "เร็ว"), ("small", "พอใช้"), ("medium", "ดี"),
+    ("large-v3-turbo", "แม่นยำ · แนะนำ"), ("large-v3", "แม่นยำที่สุด · ช้า"),
+)
 
 def _format_size(size: int) -> str:
     value = float(size)
@@ -162,19 +164,28 @@ class SubtitlePage(QWidget):
         grid.setContentsMargins(20, 18, 20, 20)
         grid.setSpacing(9)
         grid.addWidget(_label("ภาษา", "FieldLabel"))
+        self._lang_combo = QComboBox()
+        for code, name in LANGUAGE_NAMES.items():
+            self._lang_combo.addItem(name, code)
+        self._lang_combo.setCurrentIndex(0)  # detect automatically: right for songs in any language
+        self._lang_combo.currentIndexChanged.connect(lambda _i: self._refresh_summary())
+        grid.addWidget(self._lang_combo)
 
+        grid.addSpacing(6)
+        grid.addWidget(_label("เสียงในไฟล์", "FieldLabel"))
         seg = Segmented()
         seg.setFixedHeight(theme.CONTROL_HEIGHT)
-        self._lang_group = seg.group
-        self._lang_buttons: dict[str, QPushButton] = {}
-        for code, text in LANGUAGES:
-            self._lang_buttons[code] = seg.add(text)
-        self._lang_buttons["th"].setChecked(True)
-        self._lang_group.buttonToggled.connect(lambda _b, on: on and self._refresh_summary())
+        self._content_group = seg.group
+        self._speech_button = seg.add("เสียงพูด", 0, icon="audio",
+                                      tooltip="คลิป สัมภาษณ์ บรรยาย: กรองช่วงเงียบออก")
+        self._music_button = seg.add("เพลง", 1, icon="music",
+                                     tooltip="เพลงและเสียงร้อง: ไม่ตัดช่วงที่มีดนตรี และไม่ให้ AI วนซ้ำเนื้อร้อง")
+        self._speech_button.setChecked(True)
+        self._content_group.buttonToggled.connect(lambda _b, on: on and self._refresh_summary())
         grid.addWidget(seg)
+
         grid.addSpacing(6)
         grid.addWidget(_label("โมเดล AI", "FieldLabel"))
-
         self._model_combo = QComboBox()
         for size, note in MODELS:
             self._model_combo.addItem(f"{size} · {note}", size)
@@ -182,6 +193,7 @@ class SubtitlePage(QWidget):
         self._model_combo.currentIndexChanged.connect(lambda _i: self._refresh_summary())
         grid.addWidget(self._model_combo)
         self._model_combo.setToolTip("ครั้งแรกที่ใช้โมเดลแต่ละขนาด จะดาวน์โหลดโมเดลจากอินเทอร์เน็ต")
+        grid.addWidget(_label("ครั้งแรกที่ใช้แต่ละโมเดลจะดาวน์โหลดก่อน (large ประมาณ 1.5–3 GB)", "Note", wrap=True))
         return card
 
     def _build_preview_card(self) -> QFrame:
@@ -251,10 +263,15 @@ class SubtitlePage(QWidget):
     def _refresh_summary(self) -> None:
         """Language and model only: file names can be very long."""
         if self._input_path:
-            self.action_bar.set_summary(f"ภาษา{dict(LANGUAGES)[self.selected_language()]} · {self.selected_model()}")
+            kind = "เพลง" if self.selected_content() == "music" else "เสียงพูด"
+            self.action_bar.set_summary(
+                f"{LANGUAGE_NAMES[self.selected_language()]} · {kind} · {self.selected_model()}")
 
     def selected_language(self) -> str:
-        return next(code for code, button in self._lang_buttons.items() if button.isChecked())
+        return str(self._lang_combo.currentData() or "auto")
+
+    def selected_content(self) -> str:
+        return "music" if self._music_button.isChecked() else "speech"
 
     def selected_model(self) -> str:
         return self._model_combo.currentData()
@@ -268,6 +285,7 @@ class SubtitlePage(QWidget):
             str(source.with_suffix(".srt")),
             language=self.selected_language(),
             model_size=self.selected_model(),
+            content=self.selected_content(),
             write_file=False,  # the preview is shown first; the user exports from here
         )
         self._task = task
@@ -306,7 +324,8 @@ class SubtitlePage(QWidget):
     def _refresh_preview_state(self) -> None:
         has_cues = bool(self._cues)
         if has_cues:
-            self._set_chip(f"{len(self._cues)} ประโยค · ซิงก์แล้ว", on=True)
+            heard = LANGUAGE_NAMES.get(getattr(self._preview_task, "detected_language", ""), "")
+            self._set_chip(f"{len(self._cues)} ประโยค · {heard or 'ซิงก์แล้ว'}", on=True)
         elif self._preview_task is not None:
             self._set_chip("0 ประโยค", on=False)
         else:

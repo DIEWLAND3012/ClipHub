@@ -13,6 +13,7 @@ from unittest import mock
 from core.base_task import TaskStatus
 from core.errors import InputError, TaskCancelledError, ToolNotFoundError
 from tasks.subtitle import (
+    segment_cues, transcribe_options,
     Cue,
     SubtitleTask,
     format_srt_time,
@@ -122,6 +123,15 @@ class ValidateTests(unittest.TestCase):
     def test_rejects_bad_model(self) -> None:
         with self.assertRaises(InputError):
             self.make(model_size="large").validate()
+        with self.assertRaises(InputError):
+            self.make(content="karaoke").validate()
+
+    def test_new_languages_and_models(self) -> None:
+        for language in ("auto", "ja", "ko", "zh"):
+            self.make(language=language).validate()
+        for size in ("medium", "large-v3-turbo", "large-v3"):
+            self.make(model_size=size).validate()
+        self.make(content="music").validate()
 
     def test_rejects_bad_output_suffix(self) -> None:
         with self.assertRaises(InputError):
@@ -183,7 +193,9 @@ class ProcessTests(unittest.TestCase):
         module.WhisperModel.assert_called_once_with(
             "base", device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)  # every CPU core
         model.transcribe.assert_called_once()
-        self.assertEqual(model.transcribe.call_args.kwargs, {"language": "th", "vad_filter": True})
+        self.assertEqual(model.transcribe.call_args.kwargs, {
+            "language": "th", "beam_size": 5, "word_timestamps": True,
+            "vad_filter": True, "vad_parameters": {"min_silence_duration_ms": 500}})
         self.assertEqual(task.status, TaskStatus.DONE)
         self.assertEqual(self.progress[-1], 100)
         self.assertEqual(self.progress, sorted(self.progress))
@@ -222,3 +234,43 @@ class ProcessTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+def _word(start: float, end: float, word: str) -> SimpleNamespace:
+    return SimpleNamespace(start=start, end=end, word=word)
+
+
+class SongAccuracyTests(unittest.TestCase):
+    def test_auto_language_and_music_options(self) -> None:
+        options = transcribe_options("auto", "music")
+        self.assertIsNone(options["language"])  # Whisper detects the language
+        self.assertFalse(options["vad_filter"])  # singing is not cut out
+        self.assertFalse(options["condition_on_previous_text"])  # no repeated lyric loops
+        self.assertTrue(options["word_timestamps"])
+
+    def test_cue_timing_follows_the_words(self) -> None:
+        segment = SimpleNamespace(start=0.0, end=5.0, text=" hello there",
+                                  words=[_word(0.94, 1.4, " hello"), _word(1.5, 2.1, " there")])
+        self.assertEqual(segment_cues(segment), [Cue(0.94, 2.1, "hello there")])
+
+    def test_long_segments_split_into_readable_lines(self) -> None:
+        words = [_word(i * 0.5, i * 0.5 + 0.4, f" word{i}") for i in range(20)]
+        segment = SimpleNamespace(start=0.0, end=10.0, text="".join(w.word for w in words), words=words)
+        cues = segment_cues(segment)
+        self.assertGreater(len(cues), 1)
+        for cue in cues:
+            self.assertLessEqual(len(cue.text), 42)
+            self.assertLessEqual(cue.end - cue.start, 6.0)
+        self.assertEqual(" ".join(c.text for c in cues), segment.text.strip())
+
+    def test_thai_and_japanese_words_join_without_spaces(self) -> None:
+        segment = SimpleNamespace(start=0, end=2, text="煙ったいまま", words=[_word(0, 1, "煙ったい"), _word(1, 2, "まま")])
+        self.assertEqual(segment_cues(segment)[0].text, "煙ったいまま")
+
+    def test_hallucinations_are_dropped(self) -> None:
+        self.assertEqual(segment_cues(SimpleNamespace(start=0, end=3, text=" ขอบคุณที่รับชม")), [])
+        self.assertEqual(segment_cues(SimpleNamespace(start=0, end=3, text="Thanks for watching!")), [])
+        silent = SimpleNamespace(start=0, end=3, text="อะไร", no_speech_prob=0.9, avg_logprob=-1.4)
+        self.assertEqual(segment_cues(silent), [])
+        real = SimpleNamespace(start=0, end=3, text="ขอบคุณที่รับชมคลิปนี้จนจบ และอย่าลืมกดไลก์ให้กำลังใจทีมงานด้วยนะครับทุกคน")
+        self.assertEqual(len(segment_cues(real)), 1)  # a long real sentence is kept

@@ -14,8 +14,23 @@ from core.base_task import BaseMediaTask
 from core.errors import ClipHubError, InputError, ToolFailedError, ToolNotFoundError
 from core.ffmpeg import probe_duration, run_ffmpeg
 
-LANGUAGE_NAMES = {"th": "ภาษาไทย", "en": "ภาษาอังกฤษ"}
-MODEL_SIZES = ("tiny", "base", "small")
+# "auto" lets Whisper detect the language: forcing Thai on a Japanese song produced nonsense.
+LANGUAGE_NAMES = {
+    "auto": "ตรวจจับอัตโนมัติ", "th": "ภาษาไทย", "en": "ภาษาอังกฤษ", "ja": "ภาษาญี่ปุ่น",
+    "ko": "ภาษาเกาหลี", "zh": "ภาษาจีน",
+}
+# Smallest to most accurate. large-v3-turbo is close to large-v3 at several times the speed.
+MODEL_SIZES = ("tiny", "base", "small", "medium", "large-v3-turbo", "large-v3")
+DEFAULT_MODEL = "large-v3-turbo"
+CONTENT_TYPES = ("speech", "music")  # music: no speech filter, no carrying text between lines
+
+MAX_CUE_CHARS = 42      # one comfortable subtitle line
+MAX_CUE_SECONDS = 6.0
+# Lines Whisper is known to invent over silence or music (from its YouTube training data).
+HALLUCINATIONS = (
+    "ขอบคุณที่รับชม", "ฝากกดติดตาม", "กดติดตามช่อง", "thank you for watching", "thanks for watching",
+    "subtitles by", "please subscribe", "ご視聴ありがとうございました", "チャンネル登録", "字幕",
+)
 SUBTITLE_SUFFIXES = (".srt", ".vtt")
 
 EXTRACT_END = 30      # progress % when the audio track has been extracted
@@ -101,6 +116,56 @@ def write_subtitles(cues: Iterable[Cue], path: str | Path) -> Path:
     return target
 
 
+def transcribe_options(language: str, content: str) -> dict:
+    """faster-whisper settings for the chosen language and kind of audio."""
+    options: dict = {
+        "language": None if language == "auto" else language,
+        "beam_size": 5,
+        "word_timestamps": True,  # timing per word: lines start when the words do
+    }
+    if content == "music":
+        # The speech filter (VAD) is trained on talking and cuts out singing; carrying the previous
+        # line into the next makes Whisper repeat lyrics over and over.
+        options.update(vad_filter=False, condition_on_previous_text=False)
+    else:
+        options.update(vad_filter=True, vad_parameters={"min_silence_duration_ms": 500})
+    return options
+
+
+def looks_hallucinated(segment, text: str) -> bool:
+    """Whisper's invented lines: very likely silence, or a stock YouTube phrase on its own."""
+    if getattr(segment, "no_speech_prob", 0.0) > 0.6 and getattr(segment, "avg_logprob", 0.0) < -1.0:
+        return True
+    lowered = text.lower()
+    return len(text) <= 40 and any(phrase in lowered for phrase in HALLUCINATIONS)
+
+
+def segment_cues(segment, max_chars: int = MAX_CUE_CHARS, max_seconds: float = MAX_CUE_SECONDS) -> list[Cue]:
+    """One Whisper segment as subtitle cues: timed by its words, long ones split into readable lines."""
+    text = segment.text.strip()
+    if not text or looks_hallucinated(segment, text):
+        return []
+    words = [w for w in (getattr(segment, "words", None) or []) if w.word.strip()]
+    if not words:
+        return [Cue(float(segment.start), float(segment.end), text)]
+    if len(text) <= max_chars and words[-1].end - words[0].start <= max_seconds:
+        return [Cue(float(words[0].start), float(words[-1].end), text)]
+    cues: list[Cue] = []
+    chunk: list = []
+    for word in words:
+        if chunk:
+            joined = "".join(w.word for w in chunk).strip()
+            too_long = len(joined) + len(word.word.strip()) > max_chars
+            too_slow = word.end - chunk[0].start > max_seconds
+            if too_long or too_slow:
+                cues.append(Cue(float(chunk[0].start), float(chunk[-1].end), joined))
+                chunk = []
+        chunk.append(word)
+    if chunk:
+        cues.append(Cue(float(chunk[0].start), float(chunk[-1].end), "".join(w.word for w in chunk).strip()))
+    return cues
+
+
 def _import_whisper_model():
     try:
         from faster_whisper import WhisperModel
@@ -122,13 +187,17 @@ class SubtitleTask(BaseMediaTask):
         language: str = "th",
         model_size: str = "base",
         write_file: bool = True,
+        content: str = "speech",
     ) -> None:
         super().__init__(input_path, output_path)
         self.language = language
         self.model_size = model_size
         self.write_file = write_file
+        self.content = content
         self.cues: tuple[Cue, ...] = ()
         self.device_label = "CPU"
+        self.detected_language = ""  # what Whisper heard, e.g. "ja"
+        self.display_name = Path(input_path).name  # shown on the queue card
 
     def summary(self) -> str:
         return f"{LANGUAGE_NAMES.get(self.language, self.language)} · {self.model_size}"
@@ -136,9 +205,11 @@ class SubtitleTask(BaseMediaTask):
     def validate(self) -> None:
         super().validate()
         if self.language not in LANGUAGE_NAMES:
-            raise InputError("ภาษาที่เลือกไม่รองรับ เลือกได้เฉพาะภาษาไทย (th) หรือภาษาอังกฤษ (en)")
+            raise InputError("ภาษาที่เลือกไม่รองรับ")
         if self.model_size not in MODEL_SIZES:
-            raise InputError("ขนาดโมเดลไม่ถูกต้อง เลือกได้เฉพาะ tiny, base หรือ small")
+            raise InputError("ขนาดโมเดลไม่ถูกต้อง")
+        if self.content not in CONTENT_TYPES:
+            raise InputError("ประเภทเสียงไม่ถูกต้อง")
         if Path(self.output_path).suffix.lower() not in SUBTITLE_SUFFIXES:
             raise InputError("ไฟล์ปลายทางต้องมีนามสกุล .srt หรือ .vtt")
 
@@ -165,25 +236,25 @@ class SubtitleTask(BaseMediaTask):
         model, where = self._load_model(whisper_model)
         self.check_cancelled()
 
+        options = transcribe_options(self.language, self.content)
         try:
-            segments, _info = model.transcribe(str(wav), language=self.language, vad_filter=True)
+            segments, info = model.transcribe(str(wav), **options)
             segments = iter(segments)
             first = next(segments, None)  # CUDA libraries fail here, not when the model loads
         except RuntimeError:
             if where == "CPU":
                 raise
             model, where = self._load_model(whisper_model, force_cpu=True)
-            segments, _info = model.transcribe(str(wav), language=self.language, vad_filter=True)
+            segments, info = model.transcribe(str(wav), **options)
             segments = iter(segments)
             first = next(segments, None)
         self.device_label = where
+        self.detected_language = getattr(info, "language", "") or ""
         segments = itertools.chain([first] if first is not None else [], segments)
         cues: list[Cue] = []
         for segment in segments:
             self.check_cancelled()
-            text = segment.text.strip()
-            if text:
-                cues.append(Cue(float(segment.start), float(segment.end), text))
+            cues.extend(segment_cues(segment))
             done = min(float(segment.end) / duration, 1.0)
             self.report_progress(
                 EXTRACT_END + (TRANSCRIBE_END - EXTRACT_END) * done,

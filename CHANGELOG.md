@@ -4,6 +4,13 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Subtitles: much better results on songs
+- Language can be detected automatically (now the default) and Japanese, Korean and Chinese were added; forcing Thai/English on a song in another language produced nonsense.
+- New "Speech | Music" choice: music turns off the speech filter (it cut out singing) and stops Whisper repeating lyrics.
+- Models medium, large-v3-turbo (new default) and large-v3 added.
+- Lines are timed by word timestamps, long lines are split into readable subtitles, and invented lines ("Thanks for watching", "ขอบคุณที่รับชม" over silence) are dropped.
+- Measured on ZUTOMAYO "Fig Smoke" (4 min, Japanese): before, 1 garbled Thai line; after, 49 lines of Japanese lyrics in 113 s on a GTX 1660 Ti.
+
 ### Settings and language
 - "ประสิทธิภาพ" is now "การตั้งค่า" (Settings) with a gear icon; same GPU options plus a TH | EN sliding switch.
 - The whole app switches between Thai and English live (pages, queue, progress, notifications, tooltips); the choice is remembered. Translation lives in ui/i18n.py.
