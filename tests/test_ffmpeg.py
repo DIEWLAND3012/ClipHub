@@ -23,6 +23,9 @@ class FindToolTests(unittest.TestCase):
         patcher = mock.patch.object(ffmpeg, "_bundle_root", return_value=self.root)
         patcher.start()
         self.addCleanup(patcher.stop)
+        managed = mock.patch.object(ffmpeg, "managed_dir", return_value=self.root / "managed")
+        managed.start()
+        self.addCleanup(managed.stop)
 
     def test_missing_tool_raises(self) -> None:
         with mock.patch("core.ffmpeg.shutil.which", return_value=None), \
@@ -35,6 +38,14 @@ class FindToolTests(unittest.TestCase):
     def test_falls_back_to_path(self) -> None:
         with mock.patch("core.ffmpeg.shutil.which", return_value="/usr/local/bin/ffprobe"):
             self.assertEqual(ffmpeg.find_tool("ffprobe"), "/usr/local/bin/ffprobe")
+
+    def test_uses_downloaded_copy_before_path(self) -> None:
+        exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+        (self.root / "managed" / "bin").mkdir(parents=True)
+        managed = self.root / "managed" / "bin" / exe
+        managed.write_text("", encoding="utf-8")
+        with mock.patch("core.ffmpeg.shutil.which", return_value="/usr/bin/ffmpeg"):
+            self.assertEqual(ffmpeg.find_tool("ffmpeg"), str(managed))
 
     def test_prefers_bundled_copy(self) -> None:
         exe = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
@@ -137,7 +148,7 @@ class RunFfmpegTests(unittest.TestCase):
     def test_tool_missing_propagates(self) -> None:
         with mock.patch("core.ffmpeg.shutil.which", return_value=None), \
                 mock.patch.object(ffmpeg, "_EXTRA_DIRS", ()), \
-                mock.patch.object(ffmpeg, "_bundle_root", return_value=Path("/nonexistent")):
+                mock.patch.object(ffmpeg, "_bundle_root", return_value=Path("/nonexistent")),                 mock.patch.object(ffmpeg, "managed_dir", return_value=Path("/nonexistent")):
             with self.assertRaises(ToolNotFoundError):
                 ffmpeg.run_ffmpeg(["-i", "a", "b"], duration=1.0)
 

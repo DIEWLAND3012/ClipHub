@@ -4,6 +4,12 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### FFmpeg installs itself
+- On start, ClipHUB checks for FFmpeg; if the computer has none, it downloads it during the boot screen ("Loading required resources… 42%") into its own data folder (no admin rights). Windows: gyan.dev essentials build; macOS: martin-riedl.de (arm64/Intel). Downloads are checked against their SHA-256.
+- The result is remembered in ffmpeg.json, so later starts skip the check (under 1 ms).
+- The copy ClipHUB installed is updated in the background (checked every 3 days) and swapped in on the next start; an FFmpeg the user installed is never touched.
+- Offline on first start: the boot screen says so, the app still opens, and the next start tries again.
+
 ## [2.0.1] - 2026-11-17
 
 ### Fixed

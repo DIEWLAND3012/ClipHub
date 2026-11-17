@@ -1,7 +1,8 @@
 """FFmpeg / ffprobe helpers shared by Features 2-4.
 
 find_tool() prefers a copy bundled with the app (bin/ in the repo during
-development, or the PyInstaller bundle) and falls back to PATH.
+development, or the PyInstaller bundle), then the copy ClipHUB downloaded itself
+(core.ffmpeg_setup), and falls back to PATH.
 """
 from __future__ import annotations
 
@@ -35,11 +36,17 @@ def _spawn_kwargs() -> dict[str, Any]:
 _EXTRA_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
 
 
+def managed_dir() -> Path:
+    """Where ClipHUB keeps the FFmpeg it downloads itself (see core.ffmpeg_setup)."""
+    from core.ffmpeg_setup import data_dir
+    return data_dir() / "ffmpeg"
+
+
 def find_tool(name: str) -> str:
     exe = f"{name}.exe" if sys.platform == "win32" else name
-    bundled = _bundle_root() / "bin" / exe
-    if bundled.is_file():
-        return str(bundled)
+    for folder in (_bundle_root() / "bin", managed_dir() / "bin"):
+        if (folder / exe).is_file():
+            return str(folder / exe)
     found = shutil.which(name)
     if found is None:
         for directory in _EXTRA_DIRS:

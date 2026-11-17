@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, Qt, QThread
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath
 from PySide6.QtWidgets import QWidget
 
-from core import hwaccel
+from core import ffmpeg_setup, hwaccel
 from ui.app_icon import app_icon, icon_pixmap
 
 MIN_SECONDS = 3.2  # long enough to feel like a boot, short enough not to wait
@@ -30,28 +31,53 @@ class Preloader(QThread):
     """The slow parts of start-up, done off the GUI thread while the boot screen shows."""
 
     progress = Signal(float)  # 0.0 - 1.0 of the background work
+    status = Signal(str)      # a line under the bar ("" = none)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.report: hwaccel.HardwareReport | None = None
 
     def run(self) -> None:
-        self.progress.emit(0.08)
+        share = self._ensure_ffmpeg()  # part of the bar used by an FFmpeg download (0 when not needed)
+        scale = lambda v: share + (1.0 - share) * v  # noqa: E731
+        self.progress.emit(scale(0.08))
         try:
             importlib.import_module("yt_dlp")  # the downloader's first use is instant afterwards
         except Exception:
             pass
-        self.progress.emit(0.25)
+        self.progress.emit(scale(0.25))
         try:
             importlib.import_module("faster_whisper")
         except Exception:
             pass
-        self.progress.emit(0.4)
+        self.progress.emit(scale(0.4))
         try:
             self.report = hwaccel.refresh()  # test encodes on every GPU
         except Exception:
             self.report = hwaccel.HardwareReport(ready=True)
         self.progress.emit(1.0)
+
+    def _ensure_ffmpeg(self) -> float:
+        """Install FFmpeg first if this computer has none. Instant when the last check is remembered."""
+        try:
+            if not ffmpeg_setup.needs_install():
+                return 0.0
+        except Exception:
+            return 0.0
+        share = 0.7
+        self.status.emit("Loading required resources…")
+
+        def report(value: float) -> None:
+            self.progress.emit(share * value)
+            self.status.emit(f"Loading required resources…  {round(value * 100)}%")
+
+        try:
+            ffmpeg_setup.install(report)
+            self.status.emit("")
+        except Exception:
+            self.status.emit("Couldn't load required resources. Check your internet connection.")
+            time.sleep(3.5)  # long enough to read; the next start tries again
+        return share
 
 
 class BootSplash(QWidget):
@@ -69,6 +95,7 @@ class BootSplash(QWidget):
         self._tick.timeout.connect(self._step)
         self._tick.start(16)
         self._sound = None
+        self._status = ""
         self._icon = icon_pixmap(96, max(self.devicePixelRatioF(), 2.0))
         self.setWindowIcon(app_icon())
 
@@ -94,6 +121,10 @@ class BootSplash(QWidget):
     # --- progress ----------------------------------------------------------------------
     def set_target(self, value: float) -> None:
         self._target = max(self._target, min(value, 1.0))
+
+    def set_status(self, text: str) -> None:
+        self._status = text
+        self.update()
 
     def elapsed(self) -> float:
         return time.monotonic() - self._started
@@ -147,6 +178,13 @@ class BootSplash(QWidget):
                                 bar_h / 2, bar_h / 2)
             painter.fillPath(fill, QColor("#ffffff"))
 
+        if self._status:
+            small = QFont(self.font())
+            small.setPixelSize(13)
+            painter.setFont(small)
+            painter.setPen(QColor(255, 255, 255, 150))
+            painter.drawText(QRectF(0, bar.bottom() + 16, w, 22), Qt.AlignmentFlag.AlignCenter, self._status)
+
     # --- hand-over ---------------------------------------------------------------------------
     def finish(self, window: QWidget, on_done=None) -> None:
         """Cross-fade from the boot screen to the main window."""
@@ -184,6 +222,7 @@ def boot(app, make_window) -> None:
     splash.play_sound()
     loader = Preloader(splash)
     loader.progress.connect(lambda v: splash.set_target(0.85 * v))
+    loader.status.connect(splash.set_status)
 
     def build() -> None:
         window = make_window(loader.report)
@@ -198,6 +237,8 @@ def boot(app, make_window) -> None:
                 QTimer.singleShot(30, wait_then_finish)
 
         wait_then_finish()
+        # A newer FFmpeg (only the copy ClipHUB installed) is fetched quietly and used from the next start.
+        threading.Thread(target=ffmpeg_setup.check_for_update, name="ffmpeg-update", daemon=True).start()
 
     loader.finished.connect(build)
     loader.start()

@@ -18,9 +18,7 @@
 | Windows 11 | `ClipHUB-Windows.exe` | ดับเบิลคลิกเพื่อเปิดได้เลย |
 | macOS (Apple Silicon) | `ClipHUB-macOS.dmg` | เปิดไฟล์ แล้วลาก ClipHUB ไปไว้ในโฟลเดอร์ Applications |
 
-> **ก่อนใช้งาน:** ต้องติดตั้ง FFmpeg ก่อน ใช้สำหรับแปลงไฟล์ บีบอัด และถอดซับไตเติล
-> - macOS: `brew install ffmpeg`
-> - Windows: `winget install ffmpeg`
+> **FFmpeg ติดตั้งให้อัตโนมัติ:** เปิดแอปครั้งแรก ถ้าเครื่องยังไม่มี FFmpeg แอปจะดาวน์โหลดให้เองระหว่างหน้าโหลด (ประมาณ 110 MB บน Windows, 30 MB บน macOS ต้องต่ออินเทอร์เน็ต) ครั้งต่อไปเปิดได้ทันที และจะอัปเดต FFmpeg ให้เองเมื่อมีเวอร์ชันใหม่ ถ้าเครื่องมี FFmpeg อยู่แล้ว แอปจะใช้ตัวนั้นเลย
 >
 > **ไฟล์ติดตั้งยังไม่ได้ลงนามดิจิทัล:** Windows อาจขึ้นคำเตือน SmartScreen ให้กด *More info → Run anyway* ส่วน macOS ให้คลิกขวาที่ ClipHUB แล้วเลือก *Open* หรือไปที่ *System Settings → Privacy & Security → Open Anyway*
 
