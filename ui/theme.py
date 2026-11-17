@@ -342,6 +342,9 @@ QLabel#CountBadge { color: $accent; background: $accent_soft; border-radius: 10p
 QPushButton#RailClear { background: transparent; border: none; color: $accent; padding: 2px 4px; font-size: 12px;
   min-height: 0; }
 QPushButton#RailClear:hover { color: $accent_hover; background: transparent; }
+QPushButton#JobOpen { background: $accent_soft; border: none; color: $accent; border-radius: 9px;
+  padding: 3px 10px; font-size: 12px; font-weight: 600; min-height: 0; }
+QPushButton#JobOpen:hover { background: $accent_line; }
 QLabel#RailEmpty { color: $text3; font-size: 13px; padding: 24px 0; }
 QLabel#RailFoot { color: $text3; font-size: 11px; }
 QFrame#JobCard { background: $inner; border: 1px solid $separator; border-radius: 16px; }
@@ -445,6 +448,7 @@ _ICONS = {
             '<path d="M13 17.5 11.5 19a4 4 0 0 1-5.7-5.7L7.5 12"/>',
     "paste": '<rect x="6" y="4" width="12" height="16" rx="2.5"/><path d="M9 4.5h6V7a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z"/>',
     "folder": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    "trash": '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
     "video": '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/>',
     "audio": '<path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/>',
     "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/>',

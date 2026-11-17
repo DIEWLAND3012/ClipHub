@@ -133,6 +133,8 @@ EN: dict[str, str] = {
     "ประเภทเสียงไม่ถูกต้อง": "Invalid audio type",
     # queue, pill, toasts
     "ยังไม่มีงาน": "No jobs yet", "ล้าง": "Clear", "ล้างงานที่เสร็จแล้วออกจากคิว": "Remove finished jobs",
+    "ลบงานทั้งหมดออกจากคิว": "Remove all jobs", "แสดงไฟล์": "Show file", "ลบออกจากคิว": "Remove from queue",
+    "เปิดโฟลเดอร์ที่เก็บไฟล์นี้": "Open the folder with this file",
     "รอในคิว": "Waiting", "กำลังประมวลผล": "Working", "เสร็จแล้ว": "Done", "ผิดพลาด": "Failed",
     "ยกเลิกแล้ว": "Cancelled", "ยกเลิกงาน": "Cancel job", "ยกเลิกงานนี้": "Cancel this job",
     "กำลังยกเลิก…": "Cancelling…", "กำลังเริ่ม…": "Starting…", "ยกเลิกงานแล้ว": "Job cancelled",

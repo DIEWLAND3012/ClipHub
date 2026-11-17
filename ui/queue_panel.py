@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from core.base_task import BaseMediaTask
 from core.task_queue import TaskQueue
 from ui import theme
+from ui.overlays import reveal_in_folder
 from ui.theme import repolish
 from ui.widgets import ElidedLabel, animate_value, fade_in, label
 
@@ -68,6 +69,13 @@ class JobCard(QFrame):
         self.status_label.setObjectName("JobStatus")
         self.percent_label = QLabel("0%")
         self.percent_label.setObjectName("JobPercent")
+        self.output: str = ""  # the finished file, for the "Show file" button
+        self.open_button = QPushButton("แสดงไฟล์")
+        self.open_button.setObjectName("JobOpen")
+        self.open_button.setToolTip("เปิดโฟลเดอร์ที่เก็บไฟล์นี้")
+        self.open_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_button.clicked.connect(lambda: reveal_in_folder(self.output))
+        self.open_button.hide()
 
         meta = QVBoxLayout()
         meta.setSpacing(1)
@@ -81,6 +89,7 @@ class JobCard(QFrame):
         bottom = QHBoxLayout()
         bottom.addWidget(self.status_label, 1)
         bottom.addWidget(self.percent_label)
+        bottom.addWidget(self.open_button)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(13, 13, 13, 11)
         layout.setSpacing(10)
@@ -91,7 +100,9 @@ class JobCard(QFrame):
         theme.on_change(self._refresh_icons)
 
     def _refresh_icons(self) -> None:
-        self.cancel_button.setIcon(theme.themed_icon("close", "text2", 12, 2.2))
+        finished = self.state in FINISHED_STATES  # finished: the button removes the card instead
+        self.cancel_button.setIcon(theme.themed_icon("trash" if finished else "close", "text2",
+                                                     14 if finished else 12, 2.0 if finished else 2.2))
         if self.state == "done":
             pixmap = theme.icon_pixmap("check", theme.hex_color("ok"), 18, 2.4)
         elif self.state == "failed":
@@ -112,13 +123,20 @@ class JobCard(QFrame):
             return
         self.setProperty("state", state)
         self.icon_label.setProperty("state", state)
-        self.cancel_button.setVisible(state not in FINISHED_STATES)
+        self.cancel_button.setToolTip("ลบออกจากคิว" if state in FINISHED_STATES else "ยกเลิกงาน")
+        self.cancel_button.setEnabled(True)
         if state == "done":
             animate_value(self.progress, 100, 200)  # also stops an unfinished glide
             self.percent_label.setText("100%")
         self._refresh_icons()
         for widget in (self, self.icon_label, self.progress):
             repolish(widget)
+
+    def set_output(self, output: object) -> None:
+        """A finished file: swap the percentage for a "Show file" button."""
+        self.output = str(output)
+        self.percent_label.hide()
+        self.open_button.show()
 
     def set_progress(self, percent: int, message: str = "") -> None:
         if self.is_finished() or self.cancelling:
@@ -146,8 +164,8 @@ class QueuePanel(QWidget):
         self.clear_button = QPushButton("ล้าง")
         self.clear_button.setObjectName("RailClear")
         self.clear_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.clear_button.setToolTip("ล้างงานที่เสร็จแล้วออกจากคิว")
-        self.clear_button.clicked.connect(self.clear_finished)
+        self.clear_button.setToolTip("ลบงานทั้งหมดออกจากคิว")
+        self.clear_button.clicked.connect(self.clear_all)
         self.clear_button.hide()
         head = QHBoxLayout()
         head.setSpacing(8)
@@ -214,14 +232,32 @@ class QueuePanel(QWidget):
                 card.deleteLater()
         self._update_count()
 
+    def remove(self, task: BaseMediaTask) -> None:
+        """Take one finished card off the rail (the file itself stays)."""
+        card = self._cards.pop(task, None)
+        if card is not None:
+            card.hide()
+            card.deleteLater()
+        self._update_count()
+
+    def clear_all(self) -> None:
+        """Remove every card; waiting and running jobs are cancelled first."""
+        for task, card in list(self._cards.items()):
+            if not card.is_finished():
+                self.queue.cancel(task)
+            del self._cards[task]
+            card.hide()
+            card.deleteLater()
+        self._update_count()
+
     def _update_count(self) -> None:
         self.count_badge.setText(f"{len(self.unfinished_tasks())} งาน")
-        self.clear_button.setVisible(any(card.is_finished() for card in self._cards.values()))
+        self.clear_button.setVisible(bool(self._cards))
         self.empty_label.setVisible(not self._cards)
 
     def _on_added(self, task: BaseMediaTask) -> None:
         card = JobCard(task)
-        card.cancel_button.clicked.connect(lambda: self.cancel(task))
+        card.cancel_button.clicked.connect(lambda: self.remove(task) if card.is_finished() else self.cancel(task))
         self._cards[task] = card
         self._move_to_top(card)  # newest first
         fade_in(card, 320)
@@ -254,10 +290,12 @@ class QueuePanel(QWidget):
         if card is not None:
             card.set_progress(percent, message)
 
-    def _on_done(self, task: BaseMediaTask, _output: object) -> None:
+    def _on_done(self, task: BaseMediaTask, output: object) -> None:
         card = self._cards.get(task)
         if card is not None:
             card.set_state("done")
+            if output and getattr(task, "write_file", True):  # subtitles previewed only have no file yet
+                card.set_output(output)
         self._update_count()
 
     def _on_failed(self, task: BaseMediaTask, message: str) -> None:

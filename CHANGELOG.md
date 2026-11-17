@@ -4,6 +4,11 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Queue
+- Finished jobs get a "Show file" button that opens the folder with the file selected.
+- Each finished job has a trash button that removes just that job from the queue (the file stays).
+- "Clear" now removes every job; waiting and running jobs are cancelled first.
+
 ### FFmpeg installs itself
 - On start, ClipHUB checks for FFmpeg; if the computer has none, it downloads it during the boot screen ("Loading required resources… 42%") into its own data folder (no admin rights). Windows: gyan.dev essentials build; macOS: martin-riedl.de (arm64/Intel). Downloads are checked against their SHA-256.
 - The result is remembered in ffmpeg.json, so later starts skip the check (under 1 ms).
