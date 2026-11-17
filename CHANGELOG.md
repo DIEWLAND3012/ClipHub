@@ -4,6 +4,10 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-18
+
+FastCut, compress any file, FFmpeg that installs itself, and a better queue.
+
 ### Fixed
 - The theme switch in the sidebar grew very tall in full screen and its thumb slipped out after a theme change; segmented controls now keep a fixed height.
 
@@ -120,10 +124,10 @@ A new ClipHUB: liquid-glass redesign, step-by-step tools, GPU acceleration, Thai
 
 ### Added
 - Light / dark / follow-system appearance switch at the bottom of the sidebar. The choice is saved and the native title bar follows it.
-- Floating progress pill at the bottom of the window for the running job: name, status, progress bar, percent, how many jobs are waiting, and cancel.
-- Themed toast notifications replace the old message boxes for finished jobs, errors and subtitle export, with "Show in folder" / "View transcript" actions. Errors stay until closed.
-- The queue lists the running and newest jobs at the top.
-- Animations: sliding segmented-control thumb, page fade, light/dark cross-fade.
-- Liquid-glass buttons (gradient with a lit top edge) and rounded dropdown popups.
+- Floating progress pill at the bottom of the window for the running job: name, status, progress bar, percent, how many jobs are waiting, and cancel.
+- Themed toast notifications replace the old message boxes for finished jobs, errors and subtitle export, with "Show in folder" / "View transcript" actions. Errors stay until closed.
+- The queue lists the running and newest jobs at the top.
+- Animations: sliding segmented-control thumb, page fade, light/dark cross-fade.
+- Liquid-glass buttons (gradient with a lit top edge) and rounded dropdown popups.
 - "Clear finished" button in the task queue.
 - Ctrl+1 to Ctrl+4 shortcuts to switch between tools.

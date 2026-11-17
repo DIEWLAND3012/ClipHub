@@ -110,14 +110,37 @@ def _get(url: str) -> urllib.request.addinfourl:
     return urllib.request.urlopen(request, timeout=_TIMEOUT)  # noqa: S310 (fixed https URLs)
 
 
+_BTBN_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest"
+_BTBN_ZIP = re.compile(r"^ffmpeg-n(\d+(?:\.\d+)*)-latest-win64-gpl-shared-\1\.zip$")
+
+
+def _windows_github() -> Release:
+    """BtbN's builds on GitHub: fast CDN, 80 MB ("shared": ffmpeg + ffprobe + their DLLs)."""
+    with _get(_BTBN_API) as response:
+        assets = {a["name"]: a["browser_download_url"] for a in json.loads(response.read())["assets"]}
+    releases = [(m.group(1), name) for name in assets if (m := _BTBN_ZIP.match(name))]
+    if not releases or "checksums.sha256" not in assets:
+        raise RuntimeError("no Windows build in the latest release")
+    version, name = max(releases, key=lambda item: version_tuple(item[0]))
+    return Release(version, ((assets[name], assets["checksums.sha256"]),))
+
+
+def _windows_gyan() -> Release:
+    """gyan.dev essentials build: the fallback (it can be slow)."""
+    base = "https://www.gyan.dev/ffmpeg/builds/"
+    with _get(base + "release-version") as response:
+        version = response.read().decode().strip()
+    zip_url = f"{base}packages/ffmpeg-{version}-essentials_build.zip"
+    return Release(version, ((zip_url, zip_url + ".sha256"),))
+
+
 def latest_release() -> Release:
-    """The newest release build for this platform (Windows: gyan.dev, macOS: martin-riedl.de)."""
+    """The newest release build for this platform (Windows: GitHub/BtbN, else gyan.dev; macOS: martin-riedl.de)."""
     if sys.platform == "win32":
-        base = "https://www.gyan.dev/ffmpeg/builds/"
-        with _get(base + "release-version") as response:
-            version = response.read().decode().strip()
-        zip_url = f"{base}packages/ffmpeg-{version}-essentials_build.zip"
-        return Release(version, ((zip_url, zip_url + ".sha256"),))
+        try:
+            return _windows_github()
+        except Exception:
+            return _windows_gyan()
     if sys.platform == "darwin":
         arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "amd64"
         archives = []
@@ -151,6 +174,22 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _expected_sha(text: str, zip_url: str) -> str:
+    """The checksum for this archive: a lone hash, or its line in a list of 'hash  name' lines."""
+    lines = [line.split() for line in text.splitlines() if line.strip()]
+    name = zip_url.rsplit("/", 1)[-1]
+    for parts in lines:
+        if len(parts) >= 2 and parts[-1].lstrip("*") == name:
+            return parts[0].lower()
+    return lines[0][0].lower() if lines else ""
+
+
+def _clean_leftovers() -> None:
+    """Half-finished downloads from a run that was closed mid-way."""
+    for leftover in data_dir().glob("tmp*"):
+        shutil.rmtree(leftover, ignore_errors=True)
+
+
 def _install_to(folder: Path, release: Release, progress: Progress | None) -> None:
     """Download the release's archives and put ffmpeg + ffprobe in folder/bin."""
     bin_dir = folder / "bin"
@@ -163,13 +202,14 @@ def _install_to(folder: Path, release: Release, progress: Progress | None) -> No
             archive = Path(tmp) / f"ffmpeg-{index}.zip"
             _download(zip_url, archive, progress, index * span, span)
             with _get(sha_url) as response:
-                expected = response.read().decode().split()[0].lower()
+                expected = _expected_sha(response.read().decode(), zip_url)
             if _sha256(archive) != expected:
                 raise RuntimeError("FFmpeg download is damaged (checksum mismatch)")
             with zipfile.ZipFile(archive) as bundle:
                 for member in bundle.infolist():
                     name = Path(member.filename).name
-                    if name in wanted and not member.is_dir():
+                    shared_lib = name.lower().endswith(".dll") and Path(member.filename).parent.name == "bin"
+                    if (name in wanted or shared_lib) and not member.is_dir():
                         with bundle.open(member) as src, open(bin_dir / name, "wb") as dst:
                             shutil.copyfileobj(src, dst)
     for name in wanted:
@@ -226,6 +266,7 @@ def needs_install() -> bool:
 def install(progress: Progress | None = None) -> dict:
     """Download and install FFmpeg into the app's data folder. Raises on failure (e.g. offline)."""
     data_dir().mkdir(parents=True, exist_ok=True)
+    _clean_leftovers()
     release = latest_release()
     target = ffmpeg.managed_dir()
     _install_to(target, release, progress)
