@@ -413,6 +413,11 @@ class Segmented(QFrame):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
         super().resizeEvent(event)
+        # Buttons fill the track exactly (3 px inset), so a short control keeps its thumb centred.
+        inner = max(self.height() - 6, 0)
+        for button in self.group.buttons():
+            if not button.isHidden() and button.height() != inner:
+                button.setFixedHeight(inner)
         QTimer.singleShot(0, lambda: self._set_thumb(self._target()))
 
     def showEvent(self, event) -> None:  # noqa: N802 (Qt API)
