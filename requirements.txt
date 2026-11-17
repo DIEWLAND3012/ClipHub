@@ -4,3 +4,5 @@ yt-dlp[default]>=2025.1.1
 faster-whisper>=1.0.0
 # PyAV 17+ dropped the metadata_errors argument that faster-whisper passes to av.open
 av>=12,<17
+Pillow>=10
+pikepdf>=8

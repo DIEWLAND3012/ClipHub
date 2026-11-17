@@ -4,6 +4,11 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### Compress any file
+- The Compress page now takes any file. Videos work as before; images (JPG/PNG/WebP/BMP/TIFF/GIF) are re-encoded and large ones scaled down, PDFs and Office documents (DOCX/XLSX/PPTX/ODT/EPUB) get their pictures shrunk and are repacked, audio gets a lower bitrate (WAV/FLAC become FLAC or MP3), and anything else is packed into a lossless .zip.
+- High / Balanced / Small apply to every kind; the file card shows details for each kind (dimensions, pages, pictures inside, duration).
+- A result is never bigger than the original. New dependencies: Pillow and pikepdf.
+
 ### Queue
 - Finished jobs get a "Show file" button that opens the folder with the file selected.
 - Each finished job has a trash button that removes just that job from the queue (the file stays).

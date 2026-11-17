@@ -1,7 +1,8 @@
 """Feature 3 page: compressor UI with live size estimate (owner: member 3).
 
-Flow: drop or pick a video -> its details and the size estimate (left) and the quality and
-file name (right) pop in -> start from the action bar.
+Flow: drop or pick any file -> its details (and, for video, the size estimate) on the left, the
+quality and file name on the right pop in -> start from the action bar. Videos use the H.264
+compressor; images, PDF, Office documents, audio and other files use tasks.file_compressor.
 """
 from __future__ import annotations
 
@@ -23,13 +24,20 @@ from tasks.compressor import (
     CUSTOM_MODE, PRESET_LABELS, PRESETS, CompressTask, estimate_output_bytes, format_size, original_kbps,
     suggest_output_path,
 )
+from tasks.file_compressor import KIND_METHODS, KIND_NAMES, FileCompressTask, kind_of, output_ext
+from tasks.file_compressor import suggest_output_path as suggest_file_output
 from ui import theme
 from ui.widgets import (
     ActionBar, Columns, DropZone, ElidedLabel, NameField, PageDrop, Segmented, card, field_label, label,
     page_header, pop_in, primary_button,
 )
 
-VIDEO_FILTER = "วิดีโอ (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.flv *.wmv *.ts);;ทุกไฟล์ (*)"
+FILE_FILTER = "ทุกไฟล์ (*)"
+FILE_PRESET_HINTS = {
+    "high": "ลดขนาดเล็กน้อย คงคุณภาพไว้มากที่สุด",
+    "balanced": "สมดุลระหว่างคุณภาพกับขนาด",
+    "small": "ไฟล์เล็กที่สุด คุณภาพอาจลดลง",
+}
 DEFAULT_CUSTOM_KBPS = "6000"
 PRESET_HINTS = {
     "high": "คุณภาพใกล้เคียงต้นฉบับ ลดขนาดเล็กน้อย",
@@ -68,6 +76,15 @@ class _ProbeWorker(QThread):
         self.path = path
 
     def run(self) -> None:
+        if kind_of(self.path) != "video":
+            try:
+                size = os.path.getsize(self.path)
+                info = _file_details(self.path)
+            except OSError as exc:
+                self.failed.emit(self.path, f"อ่านไฟล์ไม่ได้: {exc}")
+            else:
+                self.probed.emit(self.path, size, 0.0, info)
+            return
         try:
             size = os.path.getsize(self.path)
             info = probe_media(self.path)
@@ -81,6 +98,34 @@ class _ProbeWorker(QThread):
             self.failed.emit(self.path, f"อ่านไฟล์ไม่ได้: {exc}")
         else:
             self.probed.emit(self.path, size, info["duration"], info)
+
+
+def _file_details(path: str) -> dict[str, Any]:
+    """Two detail tiles for a non-video file: {'kind', 'tiles': [(key, value), (key, value)]}."""
+    kind = kind_of(path)
+    ext = Path(path).suffix.lstrip(".").upper() or "?"
+    tiles: list[tuple[str, str]] = [("รูปแบบ", ext), ("วิธีบีบอัด", KIND_METHODS[kind])]
+    try:
+        if kind == "image":
+            from PIL import Image
+            with Image.open(path) as image:
+                tiles = [("ขนาดภาพ", f"{image.width}×{image.height}"), ("รูปแบบ", image.format or ext)]
+        elif kind == "pdf":
+            import pikepdf
+            with pikepdf.open(path) as pdf:
+                tiles = [("จำนวนหน้า", f"{len(pdf.pages)} หน้า"), ("รูปแบบ", f"PDF {pdf.pdf_version}")]
+        elif kind == "office":
+            import zipfile
+            pictures_ext = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".tif", ".tiff")
+            with zipfile.ZipFile(path) as bundle:
+                pictures = sum(1 for n in bundle.namelist() if Path(n).suffix.lower() in pictures_ext)
+            tiles = [("รูปภาพในเอกสาร", f"{pictures} รูป"), ("รูปแบบ", ext)]
+        elif kind == "audio":
+            info = probe_media(path)
+            tiles = [("ความยาว", _format_duration(info["duration"])), ("รูปแบบ", ext)]
+    except Exception:
+        pass
+    return {"kind": kind, "tiles": tiles}
 
 
 class _KbpsEdit(QLineEdit):
@@ -114,6 +159,7 @@ class CompressorPage(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._path: str | None = None
+        self._kind = "video"
         self._size = 0
         self._duration = 0.0
         self._probes: set[_ProbeWorker] = set()
@@ -130,7 +176,7 @@ class CompressorPage(QWidget):
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(16)
         col.addLayout(page_header("บีบอัด"))
-        self.dropzone = DropZone("ลากไฟล์วิดีโอมาวางที่นี่", VIDEO_FILTER, "เลือกไฟล์วิดีโอ")
+        self.dropzone = DropZone("ลากไฟล์มาวางที่นี่", FILE_FILTER, "เลือกไฟล์")
         self.dropzone.setMinimumHeight(300)
         self.dropzone.file_chosen.connect(self.set_input_file)
         self.dropzone.rejected.connect(self._set_notice)
@@ -213,8 +259,11 @@ class CompressorPage(QWidget):
         self.preset_note = label("", "Note", wrap=True)
         layout.addWidget(self.preset_note)
 
-        layout.addSpacing(8)
-        layout.addWidget(field_label("หรือกำหนดบิตเรตเอง"))
+        self.custom_gap = QWidget()
+        self.custom_gap.setFixedHeight(8)
+        layout.addWidget(self.custom_gap)
+        self.custom_label = field_label("หรือกำหนดบิตเรตเอง")
+        layout.addWidget(self.custom_label)
         self.control = QFrame()
         self.control.setObjectName("Control")
         self.control.setFixedHeight(theme.CONTROL_HEIGHT)
@@ -286,6 +335,37 @@ class CompressorPage(QWidget):
         return bar, amount
 
     # --- state ----------------------------------------------------------------
+    def _is_video(self) -> bool:
+        return self._kind == "video"
+
+    def _out_ext(self) -> str:
+        if self._is_video() or not self._path:
+            return "mp4"
+        mode = self._mode()
+        return output_ext(self._path, mode if mode != CUSTOM_MODE else "balanced")
+
+    def _apply_kind(self) -> None:
+        """Video shows bitrates and an estimate; other files only the three presets."""
+        video = self._is_video()
+        for button_id, mode in MODE_IDS.items():
+            if mode != CUSTOM_MODE:
+                text = f"{PRESET_LABELS[mode]}  −{round(PRESETS[mode] * 100)}%" if video else PRESET_LABELS[mode]
+                self.mode_group.button(button_id).setText(text)
+        for widget in (self.custom_gap, self.custom_label, self.control):
+            widget.setVisible(video)
+        if not video and self._mode() == CUSTOM_MODE:
+            self.mode_group.button(1).setChecked(True)
+        if not video:
+            self.estimate_card.hide()
+        elif not self.file_card.isHidden():
+            self.estimate_card.show()
+        if video:
+            names = (("duration", "ความยาว"), ("size", "ขนาด"), ("bitrate", "บิตเรต"), ("video", "วิดีโอ"))
+        else:
+            names = (("duration", "ประเภท"), ("size", "ขนาด"), ("bitrate", "…"), ("video", "…"))
+        for key, text in names:
+            self.tiles[key][0].findChild(QLabel, "InfoKey").setText(text)
+
     def _mode(self) -> str:
         return MODE_IDS.get(self.mode_group.checkedId(), "balanced")
 
@@ -308,6 +388,16 @@ class CompressorPage(QWidget):
         kbps = self._custom_kbps()
         _set_prop(self.control, "active", custom)
         self.preset_note.setText(PRESET_HINTS.get(mode, "นับรวมเสียง AAC 128 kbps"))
+        if not self._is_video():
+            self.name_field.set_extension(self._out_ext())
+            hint = FILE_PRESET_HINTS.get(mode, "")
+            method = KIND_METHODS.get(self._kind, "")
+            self.preset_note.setText(f"{hint} · {method}" if method else hint)
+            self.start_btn.setEnabled(self._size > 0)
+            self._estimate = 0
+            self._refresh_summary()
+            return
+        self.name_field.set_extension("mp4")
 
         ready = self._size > 0 and self._duration > 0
         usable = ready and (not custom or kbps is not None)
@@ -334,6 +424,9 @@ class CompressorPage(QWidget):
         self._refresh_summary()
 
     def _refresh_summary(self) -> None:
+        if self._path and not self._is_video() and self._size > 0:
+            self.action_bar.set_summary(f"{KIND_NAMES[self._kind]} · {PRESET_LABELS[self._mode()]}")
+            return
         if not self._path or not getattr(self, "_estimate", 0):
             self.action_bar.set_summary("")
             return
@@ -348,14 +441,21 @@ class CompressorPage(QWidget):
         self.saving_title.setText(title)
 
     def _output_path(self) -> Path:
-        stem = safe_filename(strip_extension(self.name_field.name(), "mp4")) or Path(self._path or "video").stem
-        return unique_path(Path(self._path or ".").parent, stem, "mp4", taken=self._reserved)
+        ext = self._out_ext()
+        stem = safe_filename(strip_extension(self.name_field.name(), ext)) or Path(self._path or "file").stem
+        return unique_path(Path(self._path or ".").parent, stem, ext, taken=self._reserved)
+
+    def _suggested_stem(self) -> str:
+        if self._is_video():
+            return suggest_output_path(self._path, self._reserved).stem
+        return suggest_file_output(self._path, "balanced", self._reserved).stem
 
     # --- file selection and probing -------------------------------------------
     def set_input_file(self, path: str) -> None:
         """Select a source file and start reading its details in the background."""
         self._set_notice("")
         self._path = path
+        self._kind = kind_of(path)
         self.dropzone.start_dir = os.path.dirname(path) or self.dropzone.start_dir
         self._size = 0
         self._duration = 0.0
@@ -367,11 +467,13 @@ class CompressorPage(QWidget):
         for _tile, value in self.tiles.values():
             value.set_full_text("…")
         self.name_field.edited = False  # a new file gets a fresh suggested name
-        self.name_field.set_default(suggest_output_path(path, self._reserved).stem)
+        self.name_field.set_default(self._suggested_stem())
         if self.file_card.isHidden():  # first file: the cards rise in one after another
             pop_in(self.file_card)
             pop_in(self.mode_card, delay=110)
-            pop_in(self.estimate_card, delay=220)
+            if self._is_video():
+                pop_in(self.estimate_card, delay=220)
+        self._apply_kind()
         self._refresh()
         worker = _ProbeWorker(path, self)
         worker.probed.connect(self._on_probed)
@@ -385,6 +487,17 @@ class CompressorPage(QWidget):
             return  # the user already picked another file
         self._size = size
         self._duration = duration
+        if not self._is_video():
+            tiles = info["tiles"]
+            self.file_meta.set_full_text(KIND_NAMES[info["kind"]])
+            values = {"duration": KIND_NAMES[info["kind"]], "size": format_size(size),
+                      "bitrate": tiles[0][1], "video": tiles[1][1]}
+            self.tiles["bitrate"][0].findChild(QLabel, "InfoKey").setText(tiles[0][0])
+            self.tiles["video"][0].findChild(QLabel, "InfoKey").setText(tiles[1][0])
+            for key, (_tile, value) in self.tiles.items():
+                value.set_full_text(values[key])
+            self._refresh()
+            return
         video = info["video"]
         self.file_meta.set_full_text(f"วิดีโอ · {info['format_long'] or info['format_name']}")
         values = {
@@ -423,6 +536,12 @@ class CompressorPage(QWidget):
         mode = self._mode()
         output = self._output_path()
         self._reserved.add(str(output))
+        if not self._is_video():
+            self.task_submitted.emit(FileCompressTask(self._path, str(output), mode=mode))
+            self.action_bar.flash("เพิ่มเข้าคิวแล้ว ✓")
+            self.name_field.edited = False
+            self.name_field.set_default(self._suggested_stem())
+            return
         task = CompressTask(
             self._path, str(output), mode=mode,
             target_kbps=self._custom_kbps() if mode == CUSTOM_MODE else None,
@@ -430,4 +549,4 @@ class CompressorPage(QWidget):
         self.task_submitted.emit(task)
         self.action_bar.flash("เพิ่มเข้าคิวแล้ว ✓")
         self.name_field.edited = False
-        self.name_field.set_default(suggest_output_path(self._path, self._reserved).stem)
+        self.name_field.set_default(self._suggested_stem())
