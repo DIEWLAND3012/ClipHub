@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icons/cliphub.png" width="128" alt="ClipHUB icon"></p>
+
 # ClipHUB
 
 [![ClipHUB CI](https://github.com/wasuratsomdet9009/ClipHub/actions/workflows/build.yml/badge.svg)](https://github.com/wasuratsomdet9009/ClipHub/actions/workflows/build.yml)

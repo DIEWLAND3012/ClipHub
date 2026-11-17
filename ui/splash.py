@@ -16,6 +16,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath
 from PySide6.QtWidgets import QWidget
 
 from core import hwaccel
+from ui.app_icon import app_icon, icon_pixmap
 
 MIN_SECONDS = 3.2  # long enough to feel like a boot, short enough not to wait
 
@@ -68,6 +69,8 @@ class BootSplash(QWidget):
         self._tick.timeout.connect(self._step)
         self._tick.start(16)
         self._sound = None
+        self._icon = icon_pixmap(96, max(self.devicePixelRatioF(), 2.0))
+        self.setWindowIcon(app_icon())
 
     # --- sound -----------------------------------------------------------------------
     def play_sound(self) -> None:
@@ -119,19 +122,11 @@ class BootSplash(QWidget):
 
         w, h = self.width(), self.height()
         painter.setOpacity(self._logo)
-        mark = 76
-        top = h / 2 - 78
+        mark = 96
+        top = h / 2 - 92
         logo = QRectF(w / 2 - mark / 2, top, mark, mark)
-        glyph = QPainterPath()
-        glyph.addRoundedRect(logo, 20, 20)
-        painter.fillPath(glyph, QColor("#ffffff"))
-        play = QPainterPath()  # the ClipHUB play mark cut out of the white tile
-        cx, cy = logo.center().x() + 3, logo.center().y()
-        play.moveTo(cx - 13, cy - 18)
-        play.lineTo(cx + 19, cy)
-        play.lineTo(cx - 13, cy + 18)
-        play.closeSubpath()
-        painter.fillPath(play, QColor("#000000"))
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.drawPixmap(logo.toRect(), self._icon)  # the ClipHUB app icon
 
         font = QFont(self.font())
         font.setPixelSize(22)

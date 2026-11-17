@@ -30,6 +30,7 @@ from core import hwaccel
 from core.task_queue import TaskQueue
 from tasks.subtitle import SubtitleTask
 from ui import i18n, theme
+from ui.app_icon import app_icon
 from ui.overlays import ProgressPill, ToastHost, reveal_in_folder, set_host
 from ui.pages import PAGES
 from ui.pages.subtitle_page import SubtitlePage
@@ -80,6 +81,7 @@ class MainWindow(QMainWindow):
         """`hardware` is the report the boot screen already made; without it the GPUs are probed here."""
         super().__init__()
         self.setWindowTitle("ClipHUB")
+        self.setWindowIcon(app_icon())  # title bar and taskbar
         self.setMinimumSize(*MIN_SIZE)
         self.setGeometry(default_window_rect())
         self.queue = TaskQueue(self)

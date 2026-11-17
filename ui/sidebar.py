@@ -9,6 +9,7 @@ from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ui import theme
+from ui.app_icon import icon_pixmap
 from ui.theme import repolish
 from ui.widgets import GlassCard, Segmented, bind_icon, label
 
@@ -36,10 +37,10 @@ class Sidebar(GlassCard):
         layout.setSpacing(3)
 
         mark = QLabel()
-        mark.setObjectName("BrandMark")
-        mark.setFixedSize(40, 40)
+        mark.setObjectName("BrandIcon")
+        mark.setFixedSize(42, 42)
         mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setPixmap(theme.icon_pixmap("play", "#ffffff", 20))
+        mark.setPixmap(icon_pixmap(42))  # the ClipHUB app icon
         self.brand_texts = QWidget()
         texts = QVBoxLayout(self.brand_texts)
         texts.setContentsMargins(0, 0, 0, 0)

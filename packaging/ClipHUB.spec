@@ -14,7 +14,10 @@ binaries = [(str(path), "bin") for path in ffmpeg_tools if path.is_file()]
 
 # Unverified: not yet run on real Windows/macOS runners. yt-dlp loads extractors dynamically; the AI stack
 # ships native libraries and a VAD model file. Trim a package if the first CI build shows it is unnecessary.
-datas = [(str(ROOT / "assets" / "fonts"), "assets/fonts")]  # Inter + Noto Sans Thai (OFL)
+datas = [
+    (str(ROOT / "assets" / "fonts"), "assets/fonts"),  # Inter + Noto Sans Thai (OFL)
+    (str(ROOT / "assets" / "icons"), "assets/icons"),  # app icon for windows and the boot screen
+]
 # Optional startup chime: only bundled when a local assets/sounds/startup.wav exists (it is not in git).
 if (ROOT / "assets" / "sounds" / "startup.wav").is_file():
     datas.append((str(ROOT / "assets" / "sounds"), "assets/sounds"))
@@ -36,13 +39,17 @@ a = Analysis(
 pyz = PYZ(a.pure)
 
 if sys.platform == "darwin":
-    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="ClipHUB", console=False)
+    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="ClipHUB", console=False,
+              icon=str(ROOT / "assets" / "icons" / "cliphub.icns"))
     coll = COLLECT(exe, a.binaries, a.datas, name="ClipHUB")
     app = BUNDLE(
         coll,
         name="ClipHUB.app",
+        icon=str(ROOT / "assets" / "icons" / "cliphub.icns"),  # Dock, Finder, Launchpad
         bundle_identifier="com.cliphub.app",
         info_plist={"NSHighResolutionCapable": True},
     )
 else:
-    exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="ClipHUB", console=False, upx=False)
+    # The .ico is what Explorer, the desktop shortcut, the Start menu and the taskbar show.
+    exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="ClipHUB", console=False, upx=False,
+              icon=str(ROOT / "assets" / "icons" / "cliphub.ico"))

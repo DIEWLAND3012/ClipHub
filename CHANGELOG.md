@@ -4,6 +4,10 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+### App icon
+- The new ClipHUB icon (assets/icons/cliphub.svg) is used on the title bar, the taskbar (own Windows app ID, so not Python's icon), the sidebar, the boot screen, the README, and as the .exe / .app icon (Explorer, desktop, Start menu, Dock).
+- scripts/build_icons.py renders the SVG into cliphub.ico, cliphub.icns and cliphub.png; scripts/make_desktop_shortcut.py adds a desktop shortcut for running from source.
+
 ### Subtitles: much better results on songs
 - Language can be detected automatically (now the default) and Japanese, Korean and Chinese were added; forcing Thai/English on a song in another language produced nonsense.
 - New "Speech | Music" choice: music turns off the speech filter (it cut out singing) and stops Whisper repeating lyrics.
