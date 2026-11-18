@@ -1,4 +1,5 @@
-"""Settings panel: the graphics card switch (and which card when there are several) and the app language.
+"""Settings panel, top to bottom: app version (update / go back), the GPU pack for AI subtitles, the graphics
+card switch, which card, the app language, and uninstall.
 
 Jobs always run in parallel where the hardware allows; there is nothing else to set.
 """
@@ -6,9 +7,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QListView, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QListView, QPushButton, QVBoxLayout, QWidget
 
-from core import hwaccel
+from core import app_update, gpu_pack, hwaccel
+from core.version import __version__
 from core.hwaccel import Engine, HardwareReport
 from ui import i18n, theme
 from ui.widgets import GlassCard, Segmented, fade_in, label
@@ -34,6 +36,10 @@ class PerformancePanel(GlassCard):
     close_requested = Signal()
     language_changed = Signal(str)
     size_changed = Signal()  # the popup must grow / shrink to fit
+    install_release = Signal(object)  # AppRelease: update, or go back to an older version
+    gpu_pack_install = Signal()
+    gpu_pack_uninstall = Signal()
+    uninstall_app = Signal()
 
     WIDTH = 360
 
@@ -59,6 +65,59 @@ class PerformancePanel(GlassCard):
         theme.on_change(lambda: close.setIcon(theme.themed_icon("close", "text2", 12, 2.2)))
         head.addWidget(close)
         layout.addLayout(head)
+
+        # 1. App version: a red dot and an update button when a newer version exists; any version can be chosen.
+        self._releases: list[app_update.AppRelease] = []
+        version_row = QHBoxLayout()
+        version_texts = QVBoxLayout()
+        version_texts.setSpacing(1)
+        version_texts.addWidget(label("เวอร์ชันโปรแกรม", "ToggleTitle"))
+        self.version_note = label(f"v{__version__}", "Note", wrap=True)
+        version_texts.addWidget(self.version_note)
+        version_row.addLayout(version_texts, 1)
+        self.update_dot = QLabel()
+        self.update_dot.setObjectName("UpdateDot")
+        self.update_dot.setFixedSize(10, 10)
+        self.update_dot.hide()
+        version_row.addWidget(self.update_dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addLayout(version_row)
+        self.update_button = QPushButton("อัปเดต")
+        self.update_button.setObjectName("SettingsAction")
+        self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_button.clicked.connect(self._update_now)
+        self.update_button.hide()
+        layout.addWidget(self.update_button)
+        pick_row = QHBoxLayout()
+        pick_row.setSpacing(8)
+        self.version_combo = QComboBox()
+        self.version_combo.setView(QListView())
+        self.version_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.version_combo.currentIndexChanged.connect(lambda _i: self._refresh_version_pick())
+        pick_row.addWidget(self.version_combo, 1)
+        self.version_install = QPushButton("ติดตั้ง")
+        self.version_install.setObjectName("SettingsGhost")
+        self.version_install.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.version_install.clicked.connect(self._install_picked)
+        pick_row.addWidget(self.version_install)
+        self.version_pick = QWidget()
+        self.version_pick.setLayout(pick_row)
+        pick_row.setContentsMargins(0, 0, 0, 0)
+        self.version_pick.hide()
+        layout.addWidget(self.version_pick)
+        layout.addWidget(self._line())
+
+        # 2. GPU pack: NVIDIA libraries for AI subtitles, downloaded only on request.
+        pack_texts = QVBoxLayout()
+        pack_texts.setSpacing(1)
+        pack_texts.addWidget(label("ทรัพยากรการ์ดจอเพิ่มเติม", "ToggleTitle"))
+        self.pack_note = label("", "Note", wrap=True)
+        pack_texts.addWidget(self.pack_note)
+        layout.addLayout(pack_texts)
+        self.pack_button = QPushButton()
+        self.pack_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pack_button.clicked.connect(self._pack_clicked)
+        layout.addWidget(self.pack_button)
+        layout.addWidget(self._line())
 
         switch_row = QHBoxLayout()
         texts = QVBoxLayout()
@@ -105,8 +164,96 @@ class PerformancePanel(GlassCard):
         lang_row.addLayout(lang_texts, 1)
         lang_row.addWidget(self.lang_seg, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(lang_row)
+
+        # Last: remove ClipHUB and everything it downloaded (FFmpeg, the GPU pack, settings).
+        layout.addWidget(self._line())
+        self.uninstall_button = QPushButton("ถอนการติดตั้ง ClipHUB")
+        self.uninstall_button.setObjectName("SettingsDanger")
+        self.uninstall_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.uninstall_button.clicked.connect(self.uninstall_app)
+        layout.addWidget(self.uninstall_button)
+        self.refresh_pack()
         self.set_report(self._report)
         self.hide()
+
+    @staticmethod
+    def _line() -> QFrame:
+        line = QFrame()
+        line.setObjectName("SettingsLine")
+        line.setFixedHeight(1)
+        return line
+
+    # --- app version --------------------------------------------------------------------
+    def set_releases(self, releases: list) -> None:
+        self._releases = releases
+        newer = app_update.newest(releases)
+        self.update_dot.setVisible(newer is not None)
+        if newer is not None:
+            self.version_note.setText(f"v{__version__} · มีเวอร์ชันใหม่ {newer.label}")
+            self.update_button.setText(f"อัปเดตเป็น {newer.label}")
+        elif releases:
+            self.version_note.setText(f"v{__version__} · เป็นเวอร์ชันล่าสุด")
+        else:
+            self.version_note.setText(f"v{__version__}")
+        self.update_button.setVisible(newer is not None)
+        self.version_combo.blockSignals(True)
+        self.version_combo.clear()
+        for release in releases:
+            current = release.version == __version__
+            self.version_combo.addItem(release.label + (" (ปัจจุบัน)" if current else ""), release.version)
+            if current:
+                self.version_combo.setCurrentIndex(self.version_combo.count() - 1)
+        self.version_combo.blockSignals(False)
+        self.version_pick.setVisible(len(releases) > 1 or (releases and newer is None
+                                                          and releases[0].version != __version__))
+        self._refresh_version_pick()
+        self.layout().activate()
+        self.size_changed.emit()
+
+    def has_update(self) -> bool:
+        return app_update.newest(self._releases) is not None
+
+    def _refresh_version_pick(self) -> None:
+        version = self.version_combo.currentData()
+        self.version_install.setEnabled(bool(version) and version != __version__)
+
+    def _update_now(self) -> None:
+        newer = app_update.newest(self._releases)
+        if newer is not None:
+            self.install_release.emit(newer)
+
+    def _install_picked(self) -> None:
+        version = self.version_combo.currentData()
+        for release in self._releases:
+            if release.version == version:
+                self.install_release.emit(release)
+
+    # --- GPU pack -------------------------------------------------------------------------
+    def refresh_pack(self) -> None:
+        installed = gpu_pack.installed()
+        if not gpu_pack.platform_supported():
+            note, button = "ใช้ได้เฉพาะ Windows ที่มีการ์ดจอ NVIDIA", None
+        elif installed:
+            note = f"ติดตั้งแล้ว ({gpu_pack.size_on_disk() / 1024**3:.1f} GB) ซับไตเติล AI ใช้การ์ดจอ NVIDIA"
+            button = "ถอนการติดตั้ง"
+        elif not gpu_pack.has_nvidia():
+            note, button = "ต้องมีการ์ดจอ NVIDIA จึงจะใช้ได้", None
+        else:
+            note = "ให้ซับไตเติล AI ทำงานบนการ์ดจอ NVIDIA เร็วขึ้นราว 2.5 เท่า ขนาดดาวน์โหลดประมาณ 1.3 GB"
+            button = "ดาวน์โหลด"
+        self.pack_note.setText(note)
+        self.pack_button.setVisible(button is not None)
+        if button:
+            self.pack_button.setText(button)
+            self.pack_button.setObjectName("SettingsGhost" if installed else "SettingsAction")
+            self.pack_button.style().unpolish(self.pack_button)
+            self.pack_button.style().polish(self.pack_button)
+
+    def _pack_clicked(self) -> None:
+        if gpu_pack.installed():
+            self.gpu_pack_uninstall.emit()
+        else:
+            self.gpu_pack_install.emit()
 
     # --- settings ---------------------------------------------------------------------
     def use_gpu(self) -> bool:

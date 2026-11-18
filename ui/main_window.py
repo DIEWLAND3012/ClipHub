@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import hwaccel, version
+from core import app_update, gpu_pack, hwaccel, uninstaller, version
 from core.task_queue import TaskQueue
 from tasks.subtitle import SubtitleTask
 from ui import i18n, theme
@@ -36,7 +36,9 @@ from ui.pages import PAGES
 from ui.pages.subtitle_page import SubtitlePage
 from ui.performance import HardwareProbe, PerformancePanel
 from ui.queue_panel import QueuePanel
+from ui import updater
 from ui.sidebar import Sidebar
+from ui.updater import UpdateChecker
 from ui.widgets import Backdrop, GlassCard, fade_in, pulse
 
 APP_VERSION = version.short()
@@ -116,6 +118,14 @@ class MainWindow(QMainWindow):
         self.perf.settings_changed.connect(self._configure_queue)
         self.perf.size_changed.connect(self._resize_perf_popup)
         self.perf.language_changed.connect(self._on_language)
+        self.perf.install_release.connect(self._install_release)
+        self.perf.gpu_pack_install.connect(self._install_gpu_pack)
+        self.perf.gpu_pack_uninstall.connect(self._uninstall_gpu_pack)
+        self.perf.uninstall_app.connect(self._uninstall_app)
+        self._task_screen = None
+        self._update_checker = UpdateChecker(self)  # quiet: a red dot on the settings when a new version is out
+        self._update_checker.found.connect(self._on_releases)
+        self._update_checker.start()
         self.toasts = ToastHost(central)
         set_host(self.toasts)
         self.pill = ProgressPill(
@@ -373,6 +383,77 @@ class MainWindow(QMainWindow):
         self._configure_queue()  # waiting jobs may now start on a GPU
         if self.perf.isVisible():
             self.perf.setGeometry(self._popup_rect(PerformancePanel.WIDTH, self._perf_height()))
+
+    # --- app updates, GPU pack, uninstall ------------------------------------------------
+    def _on_releases(self, releases: list) -> None:
+        self.perf.set_releases(releases)
+        self.sidebar.set_update_dot(self.perf.has_update())
+
+    def _confirm(self, title: str, text: str, action: str, danger: bool = False) -> bool:
+        box = QMessageBox(QMessageBox.Icon.Warning if danger else QMessageBox.Icon.Question, title, text,
+                          QMessageBox.StandardButton.Cancel, self)
+        go = box.addButton(action, QMessageBox.ButtonRole.AcceptRole)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel if danger else go)
+        box.exec()
+        return box.clickedButton() is go
+
+    def _queue_ok_to_stop(self) -> bool:
+        if not self.queue.is_busy():
+            return True
+        return self._confirm("มีงานที่ยังทำอยู่", "งานในคิวจะถูกยกเลิก ต้องการทำต่อหรือไม่", "ทำต่อ")
+
+    def _install_release(self, release: object) -> None:
+        if not app_update.can_self_update():
+            QMessageBox.information(self, "อัปเดต", "อัปเดตได้เฉพาะโปรแกรมที่ติดตั้งแล้ว (ไฟล์ .exe / .app) "
+                                    "ดาวน์โหลดเวอร์ชันใหม่ได้ที่ GitHub")
+            return
+        older = not app_update.is_newer(release.version, version.__version__)
+        if older and not self._confirm("เปลี่ยนเวอร์ชัน", f"ย้อนกลับไปใช้ {release.label} ใช่ไหม "
+                                       "โปรแกรมจะปิดและเปิดใหม่เอง", "ติดตั้ง " + release.label):
+            return
+        if not self._queue_ok_to_stop():
+            return
+        self.set_perf_open(False)
+        self._task_screen = updater.install_release(self, release)
+
+    def _install_gpu_pack(self) -> None:
+        if not self._confirm("ทรัพยากรการ์ดจอเพิ่มเติม", "ดาวน์โหลดประมาณ 1.3 GB และใช้พื้นที่ประมาณ 2 GB "
+                             "ต้องการดาวน์โหลดตอนนี้หรือไม่", "ดาวน์โหลด"):
+            return
+        self.set_perf_open(False)
+        screen = updater.TaskScreen(self, "GPU Pack", "กำลังดาวน์โหลดทรัพยากรการ์ดจอ…",
+                                    lambda progress, cancelled: gpu_pack.install(progress, cancelled))
+        screen.finished.connect(self._after_gpu_pack)
+        self._task_screen = screen
+        screen.start()
+
+    def _after_gpu_pack(self, ok: bool, _result: object) -> None:
+        self.perf.refresh_pack()
+        if ok:
+            if not self._probe.isRunning():
+                self._probe.start()  # re-test: subtitles can now use CUDA
+            self.toasts.show("success", "ติดตั้งทรัพยากรการ์ดจอแล้ว", "ซับไตเติล AI ใช้การ์ดจอได้แล้ว")
+
+    def _uninstall_gpu_pack(self) -> None:
+        if not self._confirm("ถอนการติดตั้ง", "ลบทรัพยากรการ์ดจอเพิ่มเติม ซับไตเติล AI จะกลับไปใช้ CPU",
+                             "ลบ", danger=True):
+            return
+        done = gpu_pack.uninstall()
+        self.perf.refresh_pack()
+        if not done:
+            QMessageBox.information(self, "ถอนการติดตั้ง", "บางไฟล์ยังถูกใช้งานอยู่ จะลบเสร็จเมื่อเปิดโปรแกรมครั้งถัดไป")
+        if not self._probe.isRunning():
+            self._probe.start()
+
+    def _uninstall_app(self) -> None:
+        if not self._confirm("ถอนการติดตั้ง ClipHUB", "ลบ ClipHUB, FFmpeg, ทรัพยากรการ์ดจอ และการตั้งค่าทั้งหมด "
+                             "ออกจากเครื่องนี้ ย้อนกลับไม่ได้", "ถอนการติดตั้ง", danger=True):
+            return
+        if not self._queue_ok_to_stop():
+            return
+        uninstaller.remove_everything_after_exit()
+        self.close()
+        QCoreApplication.instance().quit()
 
     # --- notifications --------------------------------------------------------------
     def _toast_done(self, task: object, output: object) -> None:

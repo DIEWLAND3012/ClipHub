@@ -93,6 +93,15 @@ class Sidebar(GlassCard):
         self.perf_button.setToolTip("การตั้งค่า")
         bind_icon(self.perf_button, "gear", "text2", 19)
         self.perf_button.clicked.connect(self.performance_clicked)
+        dot_row = QHBoxLayout(self.perf_button)  # red dot: a newer ClipHUB version is out
+        dot_row.setContentsMargins(0, 0, 12, 0)
+        dot_row.addStretch(1)
+        self.update_dot = QLabel()
+        self.update_dot.setObjectName("UpdateDot")
+        self.update_dot.setFixedSize(10, 10)
+        self.update_dot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.update_dot.hide()
+        dot_row.addWidget(self.update_dot, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.perf_button)
         layout.addSpacing(6)
 
@@ -223,3 +232,6 @@ class Sidebar(GlassCard):
         self.cycle_button.setIcon(theme.themed_icon(APPEARANCE_ICONS[self._appearance], "accent", 18))
         self.cycle_button.setIconSize(QSize(18, 18))
         self.cycle_button.setToolTip(f"ธีม · {theme.APPEARANCE_LABELS[self._appearance]} (คลิกเพื่อเปลี่ยน)")
+
+    def set_update_dot(self, visible: bool) -> None:
+        self.update_dot.setVisible(visible)

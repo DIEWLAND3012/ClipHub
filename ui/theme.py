@@ -208,6 +208,18 @@ QPushButton[nav="true"][compact="true"] { text-align: center; padding: 10px 0; }
 QLabel#NavBadge { background: $accent; color: #ffffff; border-radius: 9px;
   padding: 0 6px; font-size: 11px; font-weight: 700; }
 QLabel#NavBadge[compact="true"] { border-radius: 7px; padding: 0 4px; font-size: 9px; }
+QLabel#UpdateDot { background: $err; border-radius: 5px; }
+QFrame#SettingsLine { background: $separator; border: none; }
+QPushButton#SettingsAction { background: $accent; color: #ffffff; border: none; border-radius: 15px;
+  min-height: 30px; max-height: 30px; padding: 0 14px; font-weight: 600; }
+QPushButton#SettingsAction:hover { background: $accent_hover; }
+QPushButton#SettingsGhost { background: $accent_soft; color: $accent; border: none; border-radius: 15px;
+  min-height: 30px; max-height: 30px; padding: 0 14px; font-weight: 600; }
+QPushButton#SettingsGhost:hover { background: $accent_line; }
+QPushButton#SettingsGhost:disabled { background: $fill; color: $text3; }
+QPushButton#SettingsDanger { background: $err_soft; color: $err; border: none; border-radius: 15px;
+  min-height: 30px; max-height: 30px; padding: 0 14px; font-weight: 600; }
+QPushButton#SettingsDanger:hover { background: $err; color: #ffffff; }
 /* responsive queue drawer */
 QWidget#Scrim { background: $scrim; }
 QPushButton#QueueToggle { border-radius: 19px; min-height: 38px; max-height: 38px; padding: 0 16px 0 12px;

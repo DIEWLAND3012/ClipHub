@@ -175,6 +175,31 @@ EN: dict[str, str] = {
     "กำลังตรวจสอบการ์ดจอ…": "Checking graphics cards…", "ไม่พบการ์ดจอที่ใช้ได้": "No usable graphics card found",
     "ซับไตเติล AI ใช้ GPU (CUDA)": "AI subtitles use the GPU (CUDA)", "การ์ดจอ NVIDIA": "NVIDIA graphics card",
     "อ่านข้อมูลไฟล์ไม่ได้ ไฟล์อาจเสียหาย": "Couldn't read the file; it may be damaged",
+    # app version, GPU pack, uninstall
+    "เวอร์ชันโปรแกรม": "App version", "เป็นเวอร์ชันล่าสุด": "Up to date", "อัปเดต": "Update",
+    "ติดตั้ง": "Install", "เปลี่ยนเวอร์ชัน": "Change version",
+    "ทรัพยากรการ์ดจอเพิ่มเติม": "Extra GPU resources", "ดาวน์โหลด": "Download", "ถอนการติดตั้ง": "Uninstall",
+    "ใช้ได้เฉพาะ Windows ที่มีการ์ดจอ NVIDIA": "Windows with an NVIDIA graphics card only",
+    "ต้องมีการ์ดจอ NVIDIA จึงจะใช้ได้": "Needs an NVIDIA graphics card",
+    "ให้ซับไตเติล AI ทำงานบนการ์ดจอ NVIDIA เร็วขึ้นราว 2.5 เท่า ขนาดดาวน์โหลดประมาณ 1.3 GB":
+        "Runs AI subtitles on your NVIDIA card, about 2.5x faster. About 1.3 GB to download",
+    "ถอนการติดตั้ง ClipHUB": "Uninstall ClipHUB", "ลบ": "Delete", "ทำต่อ": "Continue",
+    "มีงานที่ยังทำอยู่": "Jobs are still running",
+    "งานในคิวจะถูกยกเลิก ต้องการทำต่อหรือไม่": "Jobs in the queue will be cancelled. Continue?",
+    "อัปเดตได้เฉพาะโปรแกรมที่ติดตั้งแล้ว (ไฟล์ .exe / .app) ดาวน์โหลดเวอร์ชันใหม่ได้ที่ GitHub":
+        "Only the installed app (.exe / .app) can update itself. Download new versions from GitHub",
+    "ดาวน์โหลดประมาณ 1.3 GB และใช้พื้นที่ประมาณ 2 GB ต้องการดาวน์โหลดตอนนี้หรือไม่":
+        "About 1.3 GB to download and 2 GB on disk. Download now?",
+    "กำลังดาวน์โหลดทรัพยากรการ์ดจอ…": "Downloading GPU resources…",
+    "ติดตั้งทรัพยากรการ์ดจอแล้ว": "GPU resources installed", "ซับไตเติล AI ใช้การ์ดจอได้แล้ว":
+        "AI subtitles can now use the graphics card",
+    "ลบทรัพยากรการ์ดจอเพิ่มเติม ซับไตเติล AI จะกลับไปใช้ CPU":
+        "Delete the extra GPU resources? AI subtitles will use the CPU again",
+    "บางไฟล์ยังถูกใช้งานอยู่ จะลบเสร็จเมื่อเปิดโปรแกรมครั้งถัดไป":
+        "Some files are in use; they will be deleted the next time ClipHUB starts",
+    "ลบ ClipHUB, FFmpeg, ทรัพยากรการ์ดจอ และการตั้งค่าทั้งหมด ออกจากเครื่องนี้ ย้อนกลับไม่ได้":
+        "Remove ClipHUB, FFmpeg, the GPU resources and all settings from this computer? This can't be undone",
+    "กด Esc เพื่อยกเลิก": "Press Esc to cancel", "ไม่สำเร็จ: ": "Failed: ",
 }
 
 Pattern = tuple[re.Pattern, Callable[[re.Match], str]]
@@ -196,6 +221,15 @@ PATTERNS: list[Pattern] = [
     _p(r"^CPU (\d+) เธรด$", lambda a: f"CPU {a} threads"),
     _p(r"^(\d+) ช่อง$", lambda a: f"{a} channels"),
     _p(r"^ภาษา(.+)$", lambda a: tr(a) if tr(a) != a else a),
+    _p(r"^มีเวอร์ชันใหม่ (v[\d.]+)$", lambda a: f"New version {a}"),
+    _p(r"^อัปเดตเป็น (v[\d.]+)$", lambda a: f"Update to {a}"),
+    _p(r"^กำลังดาวน์โหลด (v[\d.]+)…$", lambda a: f"Downloading {a}…"),
+    _p(r"^(v[\d.]+) \(ปัจจุบัน\)$", lambda a: f"{a} (current)"),
+    _p(r"^ย้อนกลับไปใช้ (v[\d.]+) ใช่ไหม โปรแกรมจะปิดและเปิดใหม่เอง$",
+       lambda a: f"Go back to {a}? ClipHUB will close and reopen by itself"),
+    _p(r"^ติดตั้ง (v[\d.]+)$", lambda a: f"Install {a}"),
+    _p(r"^ติดตั้งแล้ว \(([\d.]+) GB\) ซับไตเติล AI ใช้การ์ดจอ NVIDIA$",
+       lambda a: f"Installed ({a} GB). AI subtitles use the NVIDIA card"),
     _p(r"^ทุกการ์ด \((\d+) ใบ กระจายงาน\)$", lambda a: f"All {a} cards (work is shared)"),
     _p(r"^ธีม · (.+) \(คลิกเพื่อเปลี่ยน\)$", lambda a: f"Theme · {tr(a)} (click to change)"),
     _p(r"^บันทึก (.+) แล้ว$", lambda a: f"Saved {a}"),
