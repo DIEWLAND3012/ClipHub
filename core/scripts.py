@@ -40,7 +40,9 @@ def run_detached(script: Path) -> None:
     quiet = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
              "close_fds": True}
     if sys.platform == "win32":
-        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        # A hidden console of its own (not DETACHED_PROCESS): the commands inside (ping, tasklist, find) share it
+        # instead of each opening a terminal window, which is what happened from the windowless app.
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         subprocess.Popen(["cmd.exe", "/c", str(script)], creationflags=flags, **quiet)  # noqa: S603
     else:
         subprocess.Popen(["/bin/sh", str(script)], start_new_session=True, **quiet)  # noqa: S603

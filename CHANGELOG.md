@@ -4,6 +4,11 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-11-18
+
+### Fixed
+- Windows: uninstalling (and updating) opened a terminal window titled `find "…"` that stayed open, and the uninstall did not finish. The clean-up script now runs in a hidden console of its own.
+
 ## [2.2.0] - 2026-11-18
 
 In-app updates, the GPU pack as an optional download, and uninstall from the settings.
