@@ -55,8 +55,7 @@ class UninstallDialog(QWidget):
         self.title = label("ถอนการติดตั้ง ClipHUB", "DialogTitle")
         self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box.addWidget(self.title)
-        self.text = label("ลบ ClipHUB, FFmpeg, ทรัพยากรการ์ดจอ, โมเดล AI ซับไตเติล และการตั้งค่าทั้งหมด "
-                          "ออกจากเครื่องนี้ ย้อนกลับไม่ได้", "DialogText", wrap=True)
+        self.text = label("ย้อนกลับไม่ได้", "DialogText", wrap=True)
         self.text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box.addWidget(self.text)
         box.addSpacing(12)

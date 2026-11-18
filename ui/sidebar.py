@@ -93,7 +93,7 @@ class Sidebar(GlassCard):
         self.perf_button.setToolTip("การตั้งค่า")
         bind_icon(self.perf_button, "gear", "text2", 19)
         self.perf_button.clicked.connect(self.performance_clicked)
-        dot_row = QHBoxLayout(self.perf_button)  # red dot: a newer ClipHUB version is out
+        dot_row = self._dot_row = QHBoxLayout(self.perf_button)  # red dot: a newer ClipHUB version is out
         dot_row.setContentsMargins(0, 0, 12, 0)
         dot_row.addStretch(1)
         self.update_dot = QLabel()
@@ -197,6 +197,10 @@ class Sidebar(GlassCard):
             button.setText("" if compact else text)
             button.setProperty("compact", compact)
             repolish(button)
+        # Compact: the dot sits at the button's top-right corner, clear of the gear icon.
+        self._dot_row.setContentsMargins(0, 2, 2, 0) if compact else self._dot_row.setContentsMargins(0, 0, 12, 0)
+        self._dot_row.setAlignment(self.update_dot, (Qt.AlignmentFlag.AlignTop if compact
+                                                     else Qt.AlignmentFlag.AlignVCenter))
         target = self.COMPACT_WIDTH if compact else self.FULL_WIDTH
         if not animate:
             self.setFixedWidth(target)

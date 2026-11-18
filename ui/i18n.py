@@ -203,7 +203,7 @@ EN: dict[str, str] = {
     "ลบ ClipHUB, FFmpeg, ทรัพยากรการ์ดจอ, โมเดล AI ซับไตเติล และการตั้งค่าทั้งหมด ออกจากเครื่องนี้ ย้อนกลับไม่ได้":
         "Removes ClipHUB, FFmpeg, the GPU resources, the AI subtitle models and all settings from this computer. "
         "This can't be undone",
-    "ตกลง": "OK", "ยกเลิก": "Cancel", "กำลังถอนการติดตั้ง… อย่าปิดโปรแกรม": "Uninstalling… don't close ClipHUB",
+    "ย้อนกลับไม่ได้": "This can't be undone", "ตกลง": "OK", "ยกเลิก": "Cancel", "กำลังถอนการติดตั้ง… อย่าปิดโปรแกรม": "Uninstalling… don't close ClipHUB",
     "ถอนการติดตั้งเสร็จแล้ว": "Uninstalled", "ไม่สำเร็จ: ": "Failed: ",
 }
 
