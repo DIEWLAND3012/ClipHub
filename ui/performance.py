@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QListView, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLabel, QListView, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from core import app_update, gpu_pack, hwaccel
 from core.version import __version__
@@ -29,6 +29,37 @@ class HardwareProbe(QThread):
         except Exception:  # detection must never break the app; the CPU always works
             report = HardwareReport(ready=True)
         self.done.emit(report)
+
+
+class _FitScroll(QScrollArea):
+    """A scroll area that asks for its content's full height; the popup caps it to the window."""
+
+    def __init__(self, body: QWidget) -> None:
+        super().__init__()
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setWidget(body)
+        self.viewport().setAutoFillBackground(False)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 (Qt API)
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 (Qt API)
+        layout = self.widget().layout()
+        layout.activate()
+        inner = width - 4
+        return layout.totalHeightForWidth(inner) if layout.hasHeightForWidth() else layout.totalSizeHint().height()
+
+    def sizeHint(self):  # noqa: N802 (Qt API)
+        hint = super().sizeHint()
+        hint.setHeight(self.heightForWidth(self.width() or 320))
+        return hint
+
+    def minimumSizeHint(self):  # noqa: N802 (Qt API)
+        hint = super().minimumSizeHint()
+        hint.setHeight(80)
+        return hint
 
 
 class PerformancePanel(GlassCard):
@@ -65,6 +96,16 @@ class PerformancePanel(GlassCard):
         theme.on_change(lambda: close.setIcon(theme.themed_icon("close", "text2", 12, 2.2)))
         head.addWidget(close)
         layout.addLayout(head)
+
+        # Everything below the title scrolls, so a short window never squeezes rows on top of each other.
+        self.body = QWidget()
+        self.body.setAutoFillBackground(False)
+        outer = layout
+        layout = QVBoxLayout(self.body)
+        layout.setContentsMargins(0, 0, 4, 0)
+        layout.setSpacing(12)
+        self.scroll = _FitScroll(self.body)
+        outer.addWidget(self.scroll, 1)
 
         # 1. App version: a red dot and an update button when a newer version exists; any version can be chosen.
         self._releases: list[app_update.AppRelease] = []

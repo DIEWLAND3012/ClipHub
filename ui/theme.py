@@ -209,6 +209,17 @@ QLabel#NavBadge { background: $accent; color: #ffffff; border-radius: 9px;
   padding: 0 6px; font-size: 11px; font-weight: 700; }
 QLabel#NavBadge[compact="true"] { border-radius: 7px; padding: 0 4px; font-size: 9px; }
 QLabel#UpdateDot { background: $err; border-radius: 5px; }
+QFrame#DialogCard { background: $popup; border: 1px solid $separator; border-radius: 28px; }
+QLabel#DialogTitle { font-size: 22px; font-weight: 700; color: $text; }
+QLabel#DialogText { font-size: 14px; color: $text2; }
+QPushButton#DialogCancel { background: $fill; color: $text; border: none; border-radius: 20px;
+  min-height: 40px; max-height: 40px; font-size: 14px; font-weight: 600; }
+QPushButton#DialogCancel:hover { background: $ghost_hover; }
+QPushButton#DialogDanger { background: $err; color: #ffffff; border: none; border-radius: 20px;
+  min-height: 40px; max-height: 40px; font-size: 14px; font-weight: 600; }
+QPushButton#DialogDanger:hover { background: $err; border: 2px solid $err_soft; }
+QProgressBar#UninstallBar { min-height: 8px; max-height: 8px; border-radius: 4px; background: $fill; border: none; }
+QProgressBar#UninstallBar::chunk { background: $accent; border-radius: 4px; }
 QFrame#SettingsLine { background: $separator; border: none; }
 QPushButton#SettingsAction { background: $accent; color: #ffffff; border: none; border-radius: 15px;
   min-height: 30px; max-height: 30px; padding: 0 14px; font-weight: 600; }

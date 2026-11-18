@@ -43,6 +43,26 @@ def targets() -> list[Path]:
     return paths
 
 
+def remove_now(progress=None) -> None:
+    """Delete what can go while the app runs (one step per target, for a progress bar).
+
+    The app itself and DLLs still loaded stay; remove_everything_after_exit() finishes them.
+    """
+    import shutil
+    app = Path(sys.executable).resolve() if getattr(sys, "frozen", False) else None
+    items = [t for t in targets() if app is None or (t != app and app not in t.parents and t not in app.parents)]
+    for index, path in enumerate(items):
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        if progress:
+            progress((index + 1) / max(len(items), 1))
+
+
 def windows_script(paths: list[Path], pid: int) -> str:
     lines = ["@echo off", ":wait", "ping -n 2 127.0.0.1 >nul",  # 1 s waits: timeout needs a console
              f'tasklist /fi "PID eq {pid}" /nh | find "{pid}" >nul && goto wait',

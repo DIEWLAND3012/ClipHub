@@ -38,6 +38,7 @@ from ui.performance import HardwareProbe, PerformancePanel
 from ui.queue_panel import QueuePanel
 from ui import updater
 from ui.sidebar import Sidebar
+from ui.uninstall_dialog import UninstallDialog
 from ui.updater import UpdateChecker
 from ui.widgets import Backdrop, GlassCard, fade_in, pulse
 
@@ -123,6 +124,8 @@ class MainWindow(QMainWindow):
         self.perf.gpu_pack_uninstall.connect(self._uninstall_gpu_pack)
         self.perf.uninstall_app.connect(self._uninstall_app)
         self._task_screen = None
+        self.uninstall_dialog = UninstallDialog(central)
+        self.uninstall_dialog.removed.connect(self._after_uninstall)
         self._update_checker = UpdateChecker(self)  # quiet: a red dot on the settings when a new version is out
         self._update_checker.found.connect(self._on_releases)
         self._update_checker.start()
@@ -263,6 +266,8 @@ class MainWindow(QMainWindow):
         self.pill.place(area)  # just above the action bar
         self.toasts.place(area)
         self.scrim.setGeometry(self._central.rect())
+        if self.uninstall_dialog.isVisible():
+            self.uninstall_dialog.setGeometry(self._central.rect())
         if self.rail.isVisible():
             self.rail.setGeometry(self._popup_rect(QUEUE_WIDTH, self._central.height() - 20))
         if self.perf.isVisible():
@@ -446,11 +451,13 @@ class MainWindow(QMainWindow):
             self._probe.start()
 
     def _uninstall_app(self) -> None:
-        if not self._confirm("ถอนการติดตั้ง ClipHUB", "ลบ ClipHUB, FFmpeg, ทรัพยากรการ์ดจอ และการตั้งค่าทั้งหมด "
-                             "ออกจากเครื่องนี้ ย้อนกลับไม่ได้", "ถอนการติดตั้ง", danger=True):
-            return
         if not self._queue_ok_to_stop():
             return
+        self.set_perf_open(False)
+        self.uninstall_dialog.open_dialog()
+
+    def _after_uninstall(self) -> None:
+        """Files are removed; the script deletes the app and anything still in use once we quit."""
         uninstaller.remove_everything_after_exit()
         self.close()
         QCoreApplication.instance().quit()

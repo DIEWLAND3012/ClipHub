@@ -199,7 +199,12 @@ EN: dict[str, str] = {
         "Some files are in use; they will be deleted the next time ClipHUB starts",
     "ลบ ClipHUB, FFmpeg, ทรัพยากรการ์ดจอ และการตั้งค่าทั้งหมด ออกจากเครื่องนี้ ย้อนกลับไม่ได้":
         "Remove ClipHUB, FFmpeg, the GPU resources and all settings from this computer? This can't be undone",
-    "กด Esc เพื่อยกเลิก": "Press Esc to cancel", "ไม่สำเร็จ: ": "Failed: ",
+    "กด Esc เพื่อยกเลิก": "Press Esc to cancel",
+    "ลบ ClipHUB, FFmpeg, ทรัพยากรการ์ดจอ, โมเดล AI ซับไตเติล และการตั้งค่าทั้งหมด ออกจากเครื่องนี้ ย้อนกลับไม่ได้":
+        "Removes ClipHUB, FFmpeg, the GPU resources, the AI subtitle models and all settings from this computer. "
+        "This can't be undone",
+    "ตกลง": "OK", "ยกเลิก": "Cancel", "กำลังถอนการติดตั้ง… อย่าปิดโปรแกรม": "Uninstalling… don't close ClipHUB",
+    "ถอนการติดตั้งเสร็จแล้ว": "Uninstalled", "ไม่สำเร็จ: ": "Failed: ",
 }
 
 Pattern = tuple[re.Pattern, Callable[[re.Match], str]]
