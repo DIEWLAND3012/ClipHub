@@ -70,19 +70,23 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(app_update.parse_releases(data), [])
 
 
+BUNDLE = os.path.join(os.sep, "tmp", "_MEI123")  # paths that suit this OS's PATH separator
+KEEP = os.path.join(os.sep, "usr", "bin")
+
+
 class CleanEnvTests(unittest.TestCase):
     def test_pyinstaller_markers_are_dropped(self) -> None:
         from core import scripts
-        fake = {"PATH": os.pathsep.join([r"C:\Temp\_MEI123", r"C:\Windows"]), "_PYI_ARCHIVE_FILE": "x", "_PYI_APPLICATION_HOME_DIR": "y",
+        fake = {"PATH": os.pathsep.join([BUNDLE, KEEP]), "_PYI_ARCHIVE_FILE": "x", "_PYI_APPLICATION_HOME_DIR": "y",
                 "_MEIPASS2": "z", "HOME": "h"}
-        with mock.patch.dict("os.environ", fake, clear=True), mock.patch.object(sys, "_MEIPASS", r"C:\Temp\_MEI123",
+        with mock.patch.dict("os.environ", fake, clear=True), mock.patch.object(sys, "_MEIPASS", BUNDLE,
                                                                                 create=True):
             env = scripts.clean_env()
         self.assertNotIn("_PYI_ARCHIVE_FILE", env)
         self.assertNotIn("_PYI_APPLICATION_HOME_DIR", env)
         self.assertNotIn("_MEIPASS2", env)
         self.assertEqual(env["PYINSTALLER_RESET_ENVIRONMENT"], "1")
-        self.assertEqual(env["PATH"], r"C:\Windows")
+        self.assertEqual(env["PATH"], KEEP)
         self.assertEqual(env["HOME"], "h")
 
 
