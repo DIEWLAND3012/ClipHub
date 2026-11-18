@@ -156,14 +156,8 @@ def latest_release() -> Release:
 
 # --- download and install ---------------------------------------------------------------------------
 def _download(url: str, target: Path, progress: Progress | None, start: float, span: float) -> None:
-    with _get(url) as response, open(target, "wb") as out:
-        total = int(response.headers.get("Content-Length") or 0)
-        done = 0
-        while chunk := response.read1(1024 * 1024):
-            out.write(chunk)
-            done += len(chunk)
-            if progress and total:
-                progress(start + span * done / total)
+    from core import net  # resumes when a CDN connection crawls
+    net.download(url, target, (lambda v: progress(start + span * v)) if progress else None)
 
 
 def _sha256(path: Path) -> str:
