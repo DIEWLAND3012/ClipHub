@@ -31,6 +31,13 @@ class HardwareProbe(QThread):
         self.done.emit(report)
 
 
+def _shrinkable(combo: QComboBox) -> None:
+    """A long item (e.g. "NVIDIA GeForce RTX 3050 Laptop GPU") must not widen the panel; it is elided instead."""
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(6)
+    combo.setMinimumWidth(0)
+
+
 class _FitScroll(QScrollArea):
     """A scroll area that asks for its content's full height; the popup caps it to the window."""
 
@@ -41,6 +48,10 @@ class _FitScroll(QScrollArea):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setWidget(body)
         self.viewport().setAutoFillBackground(False)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        self.widget().setFixedWidth(self.viewport().width())  # never wider than what is visible
+        super().resizeEvent(event)
 
     def hasHeightForWidth(self) -> bool:  # noqa: N802 (Qt API)
         return True
@@ -132,6 +143,7 @@ class PerformancePanel(GlassCard):
         pick_row.setSpacing(8)
         self.version_combo = QComboBox()
         self.version_combo.setView(QListView())
+        _shrinkable(self.version_combo)
         self.version_combo.setCursor(Qt.CursorShape.PointingHandCursor)
         self.version_combo.currentIndexChanged.connect(lambda _i: self._refresh_version_pick())
         pick_row.addWidget(self.version_combo, 1)
@@ -180,6 +192,7 @@ class PerformancePanel(GlassCard):
         box.addWidget(label("การ์ดจอที่ใช้", "FieldLabel"))
         self.gpu_combo = QComboBox()
         self.gpu_combo.setView(QListView())
+        _shrinkable(self.gpu_combo)
         self.gpu_combo.setCursor(Qt.CursorShape.PointingHandCursor)
         self.gpu_combo.activated.connect(lambda _i: self._save())
         box.addWidget(self.gpu_combo)

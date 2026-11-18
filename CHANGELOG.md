@@ -4,6 +4,14 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-11-19
+
+### Fixed
+- Settings: a long graphics card name (e.g. "NVIDIA GeForce RTX 3050 Laptop GPU") made the panel wider than the window, cutting off the buttons and the language switch on the right. Drop-downs now shorten long names and the panel always fits.
+
+### Docs
+- README: how to open ClipHUB on Windows 11 with Smart App Control on (it blocks unsigned apps).
+
 ## [2.2.2] - 2026-11-18
 
 ### Fixed

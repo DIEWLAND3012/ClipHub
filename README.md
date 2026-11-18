@@ -13,17 +13,19 @@
 
 ## ดาวน์โหลด
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20(.exe)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/download/v2.2.2/ClipHUB-Windows-v2.2.2.exe)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20(.exe)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/download/v2.2.3/ClipHUB-Windows-v2.2.3.exe)
 [![Download for macOS](https://img.shields.io/badge/Download-macOS%20(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/download/v2.1.0/ClipHUB-macOS-v2.1.0.dmg)
 
 | ระบบ | ไฟล์ | วิธีติดตั้ง |
 |---|---|---|
-| Windows 10 / 11 | `ClipHUB-Windows-v2.2.2.exe` | ดับเบิลคลิกเปิดได้เลย ไม่ต้องติดตั้ง |
-| macOS (Apple Silicon) | `ClipHUB-macOS-v2.1.0.dmg` (v2.2.2 กำลังตามมาเร็ว ๆ นี้) | เปิดไฟล์ แล้วลาก ClipHUB ไปไว้ในโฟลเดอร์ Applications |
+| Windows 10 / 11 | `ClipHUB-Windows-v2.2.3.exe` | ดับเบิลคลิกเปิดได้เลย ไม่ต้องติดตั้ง |
+| macOS (Apple Silicon) | `ClipHUB-macOS-v2.1.0.dmg` (v2.2.3 กำลังตามมาเร็ว ๆ นี้) | เปิดไฟล์ แล้วลาก ClipHUB ไปไว้ในโฟลเดอร์ Applications |
 
 **ไม่ต้องติดตั้งอะไรเพิ่ม** เปิดแอปครั้งแรก ClipHUB จะตรวจว่าเครื่องมี FFmpeg หรือยัง ถ้ายังไม่มีจะดาวน์โหลดให้เองระหว่างหน้าโหลด (Windows ประมาณ 80 MB, macOS ประมาณ 30 MB ต้องต่ออินเทอร์เน็ต) ครั้งต่อไปเปิดได้ทันที และแอปจะอัปเดต FFmpeg ให้เองเมื่อมีเวอร์ชันใหม่
 
 > **ไฟล์ติดตั้งยังไม่ได้ลงนามดิจิทัล** Windows อาจขึ้นคำเตือน SmartScreen ให้กด *More info → Run anyway* ส่วน macOS ให้คลิกขวาที่ ClipHUB แล้วเลือก *Open* หรือไปที่ *System Settings → Privacy & Security → Open Anyway*
+>
+> **Windows 11 ที่เปิด Smart App Control** จะบล็อกแอปที่ยังไม่ได้ลงนามดิจิทัลทุกตัว (กด Run anyway ไม่ได้) ตอนนี้ต้องปิดที่ *Windows Security → App & browser control → Smart App Control settings → Off* ก่อน ClipHUB ถึงจะเปิดได้ (เมื่อปิดแล้ว Windows จะไม่ให้เปิดกลับเอง ยกเว้นติดตั้ง Windows ใหม่) เราจะแก้ถาวรด้วยการลงนามดิจิทัลไฟล์ติดตั้งในเวอร์ชันถัด ๆ ไป
 
 ## สเปคคอมพิวเตอร์
 
@@ -155,8 +157,8 @@ Windows จะได้ `dist/ClipHUB.exe` (ไฟล์เดียว) ส่�
 สร้าง tag ที่ `main` แล้ว push ขึ้น GitHub ระบบ CI จะทดสอบ build ทั้ง Windows และ macOS แล้วสร้าง Release ให้อัตโนมัติ ชื่อไฟล์มีเลขเวอร์ชันกำกับ (เช่น `ClipHUB-Windows-v2.1.0.exe`) ก่อนปล่อยเวอร์ชันใหม่ให้แก้เลขเวอร์ชันใน `core/version.py` (ที่เดียว) และลิงก์ปุ่มดาวน์โหลดด้านบน เมื่อ Release ขึ้นแล้ว แอปที่ติดตั้งอยู่จะเห็นจุดแดงและอัปเดตได้เอง
 
 ```bash
-git tag -a v2.2.2 -m "ClipHUB v2.2.2"
-git push origin v2.2.2
+git tag -a v2.2.3 -m "ClipHUB v2.2.3"
+git push origin v2.2.3
 ```
 
 ### โครงสร้าง
