@@ -4,6 +4,21 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [2.2.0] - not released yet
+
+In-app updates, the GPU pack as an optional download, and uninstall from the settings.
+
+### Added
+- App updates: ClipHUB checks GitHub quietly at start. A red dot on Settings (and next to the version inside) shows a newer version; "Update to vX" downloads it on a boot-style "Update" screen, then the app closes and reopens as the new version. Never forced. Any other published version can be installed from the list (go back).
+- GPU pack (optional, Windows + NVIDIA): NVIDIA's cuBLAS and cuDNN for AI subtitles on CUDA, downloaded from the settings (about 1.3 GB, checked against PyPI's SHA-256) and removable again. Replaces `pip install -r requirements-gpu.txt` for the installed app.
+- Uninstall ClipHUB from the settings: removes the app, FFmpeg, the GPU pack, the AI subtitle models and the settings.
+- The settings are ordered: version, GPU pack, use the graphics card, which card, language, uninstall.
+- The version number at the bottom-right of the boot screen.
+
+### Changed
+- One version source, `core/version.py`; CI names the installers from it.
+- Downloads (FFmpeg, updates, GPU pack) resume on a new connection when a CDN connection stalls or crawls.
+
 ## [2.1.0] - 2026-11-18
 
 FastCut, compress any file, FFmpeg that installs itself, and a better queue.
