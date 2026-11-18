@@ -55,7 +55,8 @@ class UninstallDialog(QWidget):
         self.title = label("ถอนการติดตั้ง ClipHUB", "DialogTitle")
         self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box.addWidget(self.title)
-        self.text = label("ย้อนกลับไม่ได้", "DialogText", wrap=True)
+        self.text = label("", "DialogText", wrap=True)  # only "done" at the end
+        self.text.hide()
         self.text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box.addWidget(self.text)
         box.addSpacing(12)
@@ -138,7 +139,6 @@ class UninstallDialog(QWidget):
     # --- removing ----------------------------------------------------------------------------
     def _start(self) -> None:
         self.buttons.hide()
-        self.text.setText("กำลังถอนการติดตั้ง… อย่าปิดโปรแกรม")
         self.progress.show()
         self.status.show()
         self._on_progress(0.0)
@@ -152,4 +152,6 @@ class UninstallDialog(QWidget):
         if self._value >= 1.0 and not self._done:
             self._done = True
             self.text.setText("ถอนการติดตั้งเสร็จแล้ว")
+            self.text.show()
+            self._place()
             QTimer.singleShot(900, self.removed.emit)
