@@ -14,7 +14,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QSettings
 
 from core.ffmpeg_setup import data_dir
 
@@ -68,6 +67,7 @@ def mac_script(paths: list[Path], pid: int) -> str:
 
 def remove_everything_after_exit() -> None:
     """Forget the settings now, and start the script that deletes the files once the app quits."""
+    from PySide6.QtCore import QSettings  # here, so the core stays importable without Qt (CI tests)
     settings = QSettings("ClipHUB", "ClipHUB")
     settings.clear()
     settings.sync()
