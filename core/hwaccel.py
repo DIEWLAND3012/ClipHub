@@ -185,10 +185,14 @@ def _whisper_gpu_ready() -> bool:
     if sys.platform == "win32":
         import ctypes
         try:
-            ctypes.WinDLL("cublas64_12.dll")
-            return True
+            lib = ctypes.WinDLL("cublas64_12.dll")
         except OSError:
             return False
+        try:  # let go of it again, so the GPU pack can be uninstalled while the app runs
+            ctypes.windll.kernel32.FreeLibrary(ctypes.c_void_p(lib._handle))
+        except Exception:
+            pass
+        return True
     return True
 
 
@@ -196,6 +200,8 @@ def add_cuda_dll_dirs() -> None:
     """Let Windows find cuBLAS / cuDNN installed as pip packages (nvidia-cublas-cu12, nvidia-cudnn-cu12)."""
     if sys.platform != "win32":
         return
+    from core import gpu_pack
+    gpu_pack.add_to_dll_path()  # the pack downloaded from the settings
     try:
         import nvidia  # namespace package from the nvidia-* wheels
     except ImportError:

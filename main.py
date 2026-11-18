@@ -6,6 +6,7 @@ import sys
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
+from core import app_update, gpu_pack
 from core.version import __version__
 from ui import i18n
 from ui.app_icon import app_icon, set_windows_app_id
@@ -15,6 +16,8 @@ from ui.theme import apply_theme
 
 
 def main() -> int:
+    gpu_pack.finish_pending_removal()  # an uninstall blocked by files in use last time
+    app_update.clean_downloads()       # the installer of an update that has been applied
     set_windows_app_id()  # before any window: the taskbar then groups ClipHUB under its own icon
     app = QApplication(sys.argv)
     app.setApplicationName("ClipHUB")
