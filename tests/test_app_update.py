@@ -1,6 +1,7 @@
 """core.app_update, core.gpu_pack and core.uninstaller: release parsing and the scripts they write."""
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -72,7 +73,7 @@ class ReleaseTests(unittest.TestCase):
 class CleanEnvTests(unittest.TestCase):
     def test_pyinstaller_markers_are_dropped(self) -> None:
         from core import scripts
-        fake = {"PATH": r"C:\Temp\_MEI123;C:\Windows", "_PYI_ARCHIVE_FILE": "x", "_PYI_APPLICATION_HOME_DIR": "y",
+        fake = {"PATH": os.pathsep.join([r"C:\Temp\_MEI123", r"C:\Windows"]), "_PYI_ARCHIVE_FILE": "x", "_PYI_APPLICATION_HOME_DIR": "y",
                 "_MEIPASS2": "z", "HOME": "h"}
         with mock.patch.dict("os.environ", fake, clear=True), mock.patch.object(sys, "_MEIPASS", r"C:\Temp\_MEI123",
                                                                                 create=True):
