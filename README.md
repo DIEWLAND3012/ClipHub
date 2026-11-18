@@ -13,13 +13,13 @@
 
 ## ดาวน์โหลด
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20(.exe)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/latest/download/ClipHUB-Windows.exe)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS%20(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/latest/download/ClipHUB-macOS.dmg)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20(.exe)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/download/v2.1.0/ClipHUB-Windows-v2.1.0.exe)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS%20(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/download/v2.1.0/ClipHUB-macOS-v2.1.0.dmg)
 
 | ระบบ | ไฟล์ | วิธีติดตั้ง |
 |---|---|---|
-| Windows 10 / 11 | `ClipHUB-Windows.exe` | ดับเบิลคลิกเปิดได้เลย ไม่ต้องติดตั้ง |
-| macOS (Apple Silicon) | `ClipHUB-macOS.dmg` | เปิดไฟล์ แล้วลาก ClipHUB ไปไว้ในโฟลเดอร์ Applications |
+| Windows 10 / 11 | `ClipHUB-Windows-v2.1.0.exe` | ดับเบิลคลิกเปิดได้เลย ไม่ต้องติดตั้ง |
+| macOS (Apple Silicon) | `ClipHUB-macOS-v2.1.0.dmg` | เปิดไฟล์ แล้วลาก ClipHUB ไปไว้ในโฟลเดอร์ Applications |
 
 **ไม่ต้องติดตั้งอะไรเพิ่ม** เปิดแอปครั้งแรก ClipHUB จะตรวจว่าเครื่องมี FFmpeg หรือยัง ถ้ายังไม่มีจะดาวน์โหลดให้เองระหว่างหน้าโหลด (Windows ประมาณ 80 MB, macOS ประมาณ 30 MB ต้องต่ออินเทอร์เน็ต) ครั้งต่อไปเปิดได้ทันที และแอปจะอัปเดต FFmpeg ให้เองเมื่อมีเวอร์ชันใหม่
 
@@ -97,7 +97,7 @@ Windows จะได้ `dist/ClipHUB.exe` (ไฟล์เดียว) ส่�
 
 ### ปล่อยเวอร์ชันใหม่
 
-สร้าง tag ที่ `main` แล้ว push ขึ้น GitHub ระบบ CI จะทดสอบ build ทั้ง Windows และ macOS แล้วสร้าง Release ให้อัตโนมัติ ชื่อไฟล์เหมือนเดิมทุกครั้ง ปุ่มดาวน์โหลดด้านบนจึงชี้ไปที่เวอร์ชันล่าสุดเสมอ
+สร้าง tag ที่ `main` แล้ว push ขึ้น GitHub ระบบ CI จะทดสอบ build ทั้ง Windows และ macOS แล้วสร้าง Release ให้อัตโนมัติ ชื่อไฟล์มีเลขเวอร์ชันกำกับ (เช่น `ClipHUB-Windows-v2.1.0.exe`) ก่อนปล่อยเวอร์ชันใหม่ให้แก้เลขเวอร์ชันใน `main.py` และลิงก์ปุ่มดาวน์โหลดด้านบน
 
 ```bash
 git tag -a v2.1.0 -m "ClipHUB v2.1.0"
