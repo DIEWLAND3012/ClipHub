@@ -35,10 +35,26 @@ def write(text: str, suffix: str) -> Path:
     return Path(name)
 
 
+def clean_env() -> dict[str, str]:
+    """This process's environment without PyInstaller's own markers.
+
+    A one-file ClipHUB sets _PYI_* / _MEIPASS2 for its unpacked copy. If the new ClipHUB started by the update
+    script inherited them, it would think it is that copy (same .exe path) and look for the old app's temp
+    folder, which is gone: "Failed to load Python DLL". The old temp folder is also dropped from PATH.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("_PYI", "_MEIPASS"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle and "PATH" in env:
+        env["PATH"] = os.pathsep.join(p for p in env["PATH"].split(os.pathsep)
+                                      if p and not p.lower().startswith(str(bundle).lower()))
+    return env
+
+
 def run_detached(script: Path) -> None:
-    """Start the script on its own, so it outlives the app."""
+    """Start the script on its own (clean environment), so it outlives the app."""
     quiet = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
-             "close_fds": True}
+             "close_fds": True, "env": clean_env()}
     if sys.platform == "win32":
         # A hidden console of its own (not DETACHED_PROCESS): the commands inside (ping, tasklist, find) share it
         # instead of each opening a terminal window, which is what happened from the windowless app.

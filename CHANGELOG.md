@@ -4,6 +4,11 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-11-18
+
+### Fixed
+- Windows: after an in-app update the new version failed to open with "Failed to load Python DLL". The update script now starts it with a clean environment (no PyInstaller markers from the old app). Updating from 2.2.0 / 2.2.1 still uses their older script: if that error shows once, just open ClipHUB again; the new version is already in place.
+
 ## [2.2.1] - 2026-11-18
 
 ### Fixed

@@ -69,6 +69,22 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(app_update.parse_releases(data), [])
 
 
+class CleanEnvTests(unittest.TestCase):
+    def test_pyinstaller_markers_are_dropped(self) -> None:
+        from core import scripts
+        fake = {"PATH": r"C:\Temp\_MEI123;C:\Windows", "_PYI_ARCHIVE_FILE": "x", "_PYI_APPLICATION_HOME_DIR": "y",
+                "_MEIPASS2": "z", "HOME": "h"}
+        with mock.patch.dict("os.environ", fake, clear=True), mock.patch.object(sys, "_MEIPASS", r"C:\Temp\_MEI123",
+                                                                                create=True):
+            env = scripts.clean_env()
+        self.assertNotIn("_PYI_ARCHIVE_FILE", env)
+        self.assertNotIn("_PYI_APPLICATION_HOME_DIR", env)
+        self.assertNotIn("_MEIPASS2", env)
+        self.assertEqual(env["PYINSTALLER_RESET_ENVIRONMENT"], "1")
+        self.assertEqual(env["PATH"], r"C:\Windows")
+        self.assertEqual(env["HOME"], "h")
+
+
 class GpuPackTests(unittest.TestCase):
     def test_only_cuda_dlls_are_kept(self) -> None:
         self.assertTrue(gpu_pack._wanted("nvidia/cublas/bin/cublas64_12.dll"))

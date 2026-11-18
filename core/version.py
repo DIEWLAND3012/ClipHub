@@ -1,5 +1,5 @@
 """The one place the app version lives (the window, the boot screen, updates and CI read it here)."""
-__version__ = "2.2.1"
+__version__ = "2.2.2"
 
 
 def short() -> str:
