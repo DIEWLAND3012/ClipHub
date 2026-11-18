@@ -141,7 +141,7 @@ def windows_swap_script(new_exe: str, app_exe: str) -> str:
         "@echo off",
         "set tries=0",
         ":wait",
-        "timeout /t 1 /nobreak >nul",
+        "ping -n 2 127.0.0.1 >nul",  # 1 s wait (timeout fails without a console)
         f'move /y "{new_exe}" "{app_exe}" >nul 2>&1',
         "if not errorlevel 1 goto run",
         "set /a tries+=1",

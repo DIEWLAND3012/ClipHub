@@ -45,9 +45,9 @@ def targets() -> list[Path]:
 
 
 def windows_script(paths: list[Path], pid: int) -> str:
-    lines = ["@echo off", ":wait", "timeout /t 1 /nobreak >nul",  # until the app has quit
+    lines = ["@echo off", ":wait", "ping -n 2 127.0.0.1 >nul",  # 1 s waits: timeout needs a console
              f'tasklist /fi "PID eq {pid}" /nh | find "{pid}" >nul && goto wait',
-             "set tries=0", ":again", "timeout /t 1 /nobreak >nul", "set left=0"]
+             "set tries=0", ":again", "ping -n 2 127.0.0.1 >nul", "set left=0"]
     for path in paths:
         lines += [f'if exist "{path}\\*" rmdir /s /q "{path}" >nul 2>&1',
                   f'if exist "{path}" del /f /q "{path}" >nul 2>&1',
