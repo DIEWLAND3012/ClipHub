@@ -4,7 +4,7 @@ All notable changes to ClipHUB. Format follows Keep a Changelog.
 
 ## [Unreleased]
 
-## [2.2.0] - not released yet
+## [2.2.0] - 2026-11-18
 
 In-app updates, the GPU pack as an optional download, and uninstall from the settings.
 
