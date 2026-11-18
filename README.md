@@ -14,12 +14,12 @@
 ## ดาวน์โหลด
 
 [![Download for Windows](https://img.shields.io/badge/Download-Windows%20(.exe)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/download/v2.2.3/ClipHUB-Windows-v2.2.3.exe)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS%20(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/download/v2.1.0/ClipHUB-macOS-v2.1.0.dmg)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS%20(.dmg)-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DIEWLAND3012/ClipHub/releases/download/v2.2.3/ClipHUB-macOS-v2.2.3.dmg)
 
 | ระบบ | ไฟล์ | วิธีติดตั้ง |
 |---|---|---|
 | Windows 10 / 11 | `ClipHUB-Windows-v2.2.3.exe` | ดับเบิลคลิกเปิดได้เลย ไม่ต้องติดตั้ง |
-| macOS (Apple Silicon) | `ClipHUB-macOS-v2.1.0.dmg` (v2.2.3 กำลังตามมาเร็ว ๆ นี้) | เปิดไฟล์ แล้วลาก ClipHUB ไปไว้ในโฟลเดอร์ Applications |
+| macOS (Apple Silicon) | `ClipHUB-macOS-v2.2.3.dmg` | เปิดไฟล์ แล้วลาก ClipHUB ไปไว้ในโฟลเดอร์ Applications |
 
 **ไม่ต้องติดตั้งอะไรเพิ่ม** เปิดแอปครั้งแรก ClipHUB จะตรวจว่าเครื่องมี FFmpeg หรือยัง ถ้ายังไม่มีจะดาวน์โหลดให้เองระหว่างหน้าโหลด (Windows ประมาณ 80 MB, macOS ประมาณ 30 MB ต้องต่ออินเทอร์เน็ต) ครั้งต่อไปเปิดได้ทันที และแอปจะอัปเดต FFmpeg ให้เองเมื่อมีเวอร์ชันใหม่
 
