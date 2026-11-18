@@ -6,6 +6,7 @@ import sys
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
+from core.version import __version__
 from ui import i18n
 from ui.app_icon import app_icon, set_windows_app_id
 from ui.main_window import MainWindow
@@ -17,7 +18,7 @@ def main() -> int:
     set_windows_app_id()  # before any window: the taskbar then groups ClipHUB under its own icon
     app = QApplication(sys.argv)
     app.setApplicationName("ClipHUB")
-    app.setApplicationVersion("2.1.0")
+    app.setApplicationVersion(__version__)
     app.setWindowIcon(app_icon())  # every window, dialog and the taskbar
     # Every on-screen text goes through ui.i18n; the saved language applies from the first window.
     i18n.install()

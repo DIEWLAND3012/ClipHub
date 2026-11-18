@@ -75,11 +75,11 @@ jobs:
 
       # FFmpeg is not bundled yet: the licence (libx264 is GPL) is still a team decision.
       # The app uses ffmpeg from PATH or /opt/homebrew/bin, so the installers work once ffmpeg is installed.
-      # Installer names carry the version (ClipHUB-Windows-v2.1.0.exe), read from main.py.
+      # Installer names carry the version (ClipHUB-Windows-v2.1.0.exe), read from core/version.py.
       - name: Read the app version
         shell: bash
         run: |
-          VERSION=$(python -c "import re;print(re.search(r'setApplicationVersion[(].([0-9.]+)', open('main.py',encoding='utf-8').read()).group(1))")
+          VERSION=$(python -c "import re;print(re.search(r'__version__ = .([0-9.]+)', open('core/version.py',encoding='utf-8').read()).group(1))")
           echo "FILE=ClipHUB-${{ matrix.platform }}-v$VERSION.${{ matrix.ext }}" >> "$GITHUB_ENV"
 
       - name: Build with PyInstaller

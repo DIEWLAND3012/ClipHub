@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath
 from PySide6.QtWidgets import QWidget
 
 from core import ffmpeg_setup, hwaccel
+from core.version import __version__
 from ui.app_icon import app_icon, icon_pixmap
 
 CREDIT = "© 2026 DIEWLAND STUDIO"
@@ -184,6 +185,8 @@ class BootSplash(QWidget):
         painter.setFont(credit)
         painter.setPen(QColor(255, 255, 255, 110))
         painter.drawText(QRectF(0, h - 52, w, 20), Qt.AlignmentFlag.AlignCenter, CREDIT)
+        painter.drawText(QRectF(0, h - 52, w - 28, 20),  # the version, bottom-right
+                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "v" + __version__)
 
         if self._status:
             small = QFont(self.font())

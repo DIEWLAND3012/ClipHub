@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import hwaccel
+from core import hwaccel, version
 from core.task_queue import TaskQueue
 from tasks.subtitle import SubtitleTask
 from ui import i18n, theme
@@ -39,7 +39,7 @@ from ui.queue_panel import QueuePanel
 from ui.sidebar import Sidebar
 from ui.widgets import Backdrop, GlassCard, fade_in, pulse
 
-APP_VERSION = "v2.1"
+APP_VERSION = version.short()
 QUEUE_WIDTH = 340
 CONTENT_MAX_WIDTH = 1120
 COMPACT_SIDEBAR_WIDTH = 940   # below this the sidebar shows icons only
