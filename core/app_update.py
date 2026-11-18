@@ -8,7 +8,6 @@ macOS: the .dmg is mounted and its ClipHUB.app copied over the running bundle, a
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -20,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from core import net
 from core.ffmpeg_setup import data_dir, is_newer, version_tuple
 from core.version import __version__
 
@@ -102,21 +102,12 @@ def download(release: AppRelease, progress: Progress | None = None,
     """Fetch the installer into the app's data folder and check it. Returns its path."""
     target = _update_dir() / release.url.rsplit("/", 1)[-1]
     partial = target.with_suffix(target.suffix + ".part")
-    digest = hashlib.sha256()
-    with _get(release.url) as response, open(partial, "wb") as out:
-        total = int(response.headers.get("Content-Length") or release.size or 0)
-        done = 0
-        while chunk := response.read(256 * 1024):
-            if is_cancelled():
-                out.close()
-                partial.unlink(missing_ok=True)
-                raise InterruptedError("cancelled")
-            out.write(chunk)
-            digest.update(chunk)
-            done += len(chunk)
-            if progress and total:
-                progress(min(done / total, 1.0))
-    if release.sha256 and digest.hexdigest() != release.sha256.lower():
+    try:
+        sha = net.download(release.url, partial, progress, is_cancelled, release.size)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    if release.sha256 and sha != release.sha256.lower():
         partial.unlink(missing_ok=True)
         raise RuntimeError("The download is damaged (checksum mismatch). Try again.")
     if release.size and partial.stat().st_size != release.size:

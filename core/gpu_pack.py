@@ -6,7 +6,6 @@ kept, in <data dir>/gpu-pack. Windows only: macOS has no CUDA.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -17,7 +16,8 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from core.ffmpeg_setup import data_dir
+from core import net
+from core.ffmpeg_setup import _clean_leftovers, data_dir
 
 Progress = Callable[[float], None]
 
@@ -102,9 +102,10 @@ def install(progress: Progress | None = None, is_cancelled: Callable[[], bool] =
         raise RuntimeError("The GPU pack is for Windows with an NVIDIA graphics card.")
     data_dir().mkdir(parents=True, exist_ok=True)
     _pending_file().unlink(missing_ok=True)
+    _clean_leftovers()  # a download that was cut off last time
     infos = [wheel_info(n, v) for n, v in PACKAGES]
     total = sum(size for _url, size, _sha in infos) or 1
-    done = 0
+    done = 0  # bytes of the wheels already downloaded
     staging = data_dir() / "gpu-pack.new"
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
@@ -112,26 +113,21 @@ def install(progress: Progress | None = None, is_cancelled: Callable[[], bool] =
         with tempfile.TemporaryDirectory(dir=data_dir()) as tmp:
             for index, (url, size, sha) in enumerate(infos):
                 wheel = Path(tmp) / f"pack-{index}.whl"
-                digest = hashlib.sha256()
-                with _get(url) as response, open(wheel, "wb") as out:
-                    while chunk := response.read(512 * 1024):
-                        if is_cancelled():
-                            raise InterruptedError("cancelled")
-                        out.write(chunk)
-                        digest.update(chunk)
-                        done += len(chunk)
-                        if progress:
-                            progress(0.9 * done / total)
-                if digest.hexdigest() != sha:
+                start = done
+                report = (lambda v, s=start, n=size: progress(0.92 * (s + v * n) / total)) if progress else None
+                if net.download(url, wheel, report, is_cancelled, size) != sha:
                     raise RuntimeError("The download is damaged (checksum mismatch). Try again.")
+                done += size
                 with zipfile.ZipFile(wheel) as bundle:
                     for member in bundle.namelist():
+                        if is_cancelled():
+                            raise InterruptedError("cancelled")
                         if _wanted(member):
                             with bundle.open(member) as src, open(staging / Path(member).name, "wb") as dst:
                                 shutil.copyfileobj(src, dst)
                 wheel.unlink()
-                if progress:
-                    progress(0.9 + 0.1 * (index + 1) / len(infos))
+            if progress:
+                progress(0.98)
         if not (staging / MARKER).is_file():
             raise RuntimeError("cuBLAS is missing from the download")
         shutil.rmtree(folder(), ignore_errors=True)

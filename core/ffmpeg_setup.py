@@ -159,7 +159,7 @@ def _download(url: str, target: Path, progress: Progress | None, start: float, s
     with _get(url) as response, open(target, "wb") as out:
         total = int(response.headers.get("Content-Length") or 0)
         done = 0
-        while chunk := response.read(256 * 1024):
+        while chunk := response.read1(1024 * 1024):
             out.write(chunk)
             done += len(chunk)
             if progress and total:
