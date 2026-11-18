@@ -83,9 +83,14 @@ class Preloader(QThread):
 
 
 class BootSplash(QWidget):
-    """Frameless black window with the logo, the name and a thin progress bar."""
+    """Frameless black window with the logo, the name and a thin progress bar.
 
-    def __init__(self) -> None:
+    The same screen, with another title and no minimum time, shows app updates and GPU pack downloads.
+    """
+
+    cancel_requested = Signal()  # Esc, when cancel_hint is set
+
+    def __init__(self, title: str = "ClipHUB", crawl: bool = True) -> None:
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
                          | Qt.WindowType.SplashScreen)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -98,6 +103,9 @@ class BootSplash(QWidget):
         self._tick.start(16)
         self._sound = None
         self._status = ""
+        self._title = title
+        self._crawl = crawl  # boot: ease along with a minimum time; tasks: follow the real progress
+        self.cancel_hint = False
         self._icon = icon_pixmap(96, max(self.devicePixelRatioF(), 2.0))
         self.setWindowIcon(app_icon())
 
@@ -124,6 +132,9 @@ class BootSplash(QWidget):
     def set_target(self, value: float) -> None:
         self._target = max(self._target, min(value, 1.0))
 
+    def reset_progress(self) -> None:
+        self._target = self._value = 0.0
+
     def set_status(self, text: str) -> None:
         self._status = text
         self.update()
@@ -134,7 +145,18 @@ class BootSplash(QWidget):
     def done(self) -> bool:
         return self._value >= 0.995 and self.elapsed() >= MIN_SECONDS
 
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if self.cancel_hint and event.key() == Qt.Key.Key_Escape:
+            self.cancel_requested.emit()
+        else:
+            super().keyPressEvent(event)
+
     def _step(self) -> None:
+        if not self._crawl:
+            self._value += (self._target - self._value) * 0.25
+            self._logo = min(1.0, self.elapsed() / 0.4)
+            self.update()
+            return
         # Never run ahead of the minimum time, then ease toward the real progress (macOS-like crawl).
         time_cap = min(self.elapsed() / MIN_SECONDS, 1.0)
         goal = min(self._target, 0.15 + 0.85 * time_cap)
@@ -166,7 +188,7 @@ class BootSplash(QWidget):
         font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font)
         painter.setPen(QColor("#ffffff"))
-        painter.drawText(QRectF(0, logo.bottom() + 18, w, 32), Qt.AlignmentFlag.AlignCenter, "ClipHUB")
+        painter.drawText(QRectF(0, logo.bottom() + 18, w, 32), Qt.AlignmentFlag.AlignCenter, self._title)
 
         painter.setOpacity(1.0)
         bar_w, bar_h = 220, 5
