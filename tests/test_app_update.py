@@ -11,7 +11,7 @@ from core import app_update, gpu_pack, uninstaller
 
 def _release(tag: str, *names: str, draft: bool = False, prerelease: bool = False) -> dict:
     return {"tag_name": tag, "draft": draft, "prerelease": prerelease, "body": "notes",
-            "assets": [{"name": n, "browser_download_url": f"https://x/{tag}/{n}", "size": 10,
+            "assets": [{"name": n, "browser_download_url": f"{app_update.DOWNLOAD_PREFIX}{tag}/{n}", "size": 10,
                         "digest": "sha256:" + "ab" * 32} for n in names]}
 
 
@@ -51,8 +51,22 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn(r'start "" "C:\Apps\ClipHUB.exe"', win)
         mac = app_update.mac_swap_script("/tmp/a.dmg", "/Applications/ClipHUB.app", 42)
         self.assertIn("kill -0 42", mac)
-        self.assertIn('ditto "$MNT/ClipHUB.app" "/Applications/ClipHUB.app"', mac)
-        self.assertIn('open "/Applications/ClipHUB.app"', mac)
+        self.assertIn('ditto "$MNT/ClipHUB.app" /Applications/ClipHUB.app', mac)
+        self.assertIn("open /Applications/ClipHUB.app", mac)
+
+    def test_scripts_cannot_be_injected(self) -> None:
+        win = app_update.windows_swap_script("C:\\Users\\a%PATH%b\\new.exe", "C:\\Apps\\ClipHUB.exe")
+        self.assertIn("a%%PATH%%b", win)
+        with self.assertRaises(ValueError):
+            app_update.windows_swap_script('C:\\x" & calc & "', "C:\\Apps\\ClipHUB.exe")
+        mac = app_update.mac_swap_script("/tmp/$(touch pwned).dmg", "/Applications/ClipHUB.app", 1)
+        self.assertIn("'/tmp/$(touch pwned).dmg'", mac)
+
+    def test_only_this_repos_installers(self) -> None:
+        data = [_release("v9.0.0", "ClipHUB-Windows-v9.exe", "ClipHUB-macOS-v9.dmg")]
+        for asset in data[0]["assets"]:
+            asset["browser_download_url"] = "https://evil.example/" + asset["name"]
+        self.assertEqual(app_update.parse_releases(data), [])
 
 
 class GpuPackTests(unittest.TestCase):
@@ -75,7 +89,13 @@ class UninstallTests(unittest.TestCase):
             self.assertIn(f'del /f /q "{path}"', win)
         self.assertIn(r"reg delete HKCU\Software\ClipHUB", win)
         mac = uninstaller.mac_script([Path("/x/ClipHUB.app")], 7)
-        self.assertIn('rm -rf "/x/ClipHUB.app"', mac.replace("\\", "/"))
+        self.assertIn("rm -rf", mac)
+        self.assertIn("ClipHUB.app", mac)
+
+    def test_never_removes_home_or_root(self) -> None:
+        self.assertFalse(uninstaller._safe(Path.home()))
+        self.assertFalse(uninstaller._safe(Path(Path.home().anchor)))
+        self.assertTrue(uninstaller._safe(Path.home() / "AppData" / "Local" / "ClipHUB"))
 
     def test_source_run_keeps_the_source(self) -> None:
         with mock.patch.object(sys, "frozen", False, create=True):

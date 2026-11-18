@@ -11,20 +11,19 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import sys
-import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from core import net
+from core import net, scripts
 from core.ffmpeg_setup import data_dir, is_newer, version_tuple
 from core.version import __version__
 
 REPO = "DIEWLAND3012/ClipHub"
 API = f"https://api.github.com/repos/{REPO}/releases?per_page=30"
+DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
 _TIMEOUT = 30
 Progress = Callable[[float], None]
 
@@ -67,6 +66,8 @@ def parse_releases(data: list[dict]) -> list[AppRelease]:
         asset = _platform_asset(item.get("assets") or [])
         if not version or not version_tuple(version) or asset is None:
             continue
+        if not str(asset.get("browser_download_url", "")).startswith(DOWNLOAD_PREFIX):
+            continue  # only installers from this repository's own releases
         digest = str(asset.get("digest") or "")
         found[version] = AppRelease(version, asset["browser_download_url"], int(asset.get("size") or 0),
                                     digest.split(":", 1)[1] if digest.startswith("sha256:") else "",
@@ -117,29 +118,21 @@ def download(release: AppRelease, progress: Progress | None = None,
     return target
 
 
-def _detached(args: list[str]) -> None:
-    flags = 0
-    if sys.platform == "win32":
-        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-    subprocess.Popen(args, close_fds=True, creationflags=flags,  # noqa: S603 (our own script)
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=sys.platform != "win32")
-
-
 def windows_swap_script(new_exe: str, app_exe: str) -> str:
     """Wait until the running .exe can be replaced, replace it, start it, then delete this script."""
+    new, app = scripts.cmd_quote(new_exe), scripts.cmd_quote(app_exe)
     return "\r\n".join([
         "@echo off",
         "set tries=0",
         ":wait",
         "ping -n 2 127.0.0.1 >nul",  # 1 s wait (timeout fails without a console)
-        f'move /y "{new_exe}" "{app_exe}" >nul 2>&1',
+        f"move /y {new} {app} >nul 2>&1",
         "if not errorlevel 1 goto run",
         "set /a tries+=1",
         "if %tries% lss 120 goto wait",
         "goto end",
         ":run",
-        f'start "" "{app_exe}"',
+        f'start "" {app}',
         ":end",
         '(goto) 2>nul & del "%~f0"',
         "",
@@ -148,18 +141,19 @@ def windows_swap_script(new_exe: str, app_exe: str) -> str:
 
 def mac_swap_script(dmg: str, app_bundle: str, pid: int) -> str:
     """Wait for the app to quit, copy ClipHUB.app from the disk image over it, then open it."""
+    q = scripts.sh_quote
+    app, old, image = q(app_bundle), q(app_bundle + ".old"), q(dmg)
     return "\n".join([
         "#!/bin/sh",
-        f"while kill -0 {pid} 2>/dev/null; do sleep 0.5; done",
+        f"while kill -0 {int(pid)} 2>/dev/null; do sleep 0.5; done",
         'MNT=$(mktemp -d)',
-        f'hdiutil attach -nobrowse -quiet -mountpoint "$MNT" "{dmg}" || exit 1',
-        f'rm -rf "{app_bundle}.old"; mv "{app_bundle}" "{app_bundle}.old"',
-        f'if ditto "$MNT/ClipHUB.app" "{app_bundle}"; then rm -rf "{app_bundle}.old"; '
-        f'else mv "{app_bundle}.old" "{app_bundle}"; fi',
+        f'hdiutil attach -nobrowse -quiet -mountpoint "$MNT" {image} || exit 1',
+        f"rm -rf {old}; mv {app} {old}",
+        f'if ditto "$MNT/ClipHUB.app" {app}; then rm -rf {old}; else mv {old} {app}; fi',
         'hdiutil detach -quiet "$MNT"',
-        f'xattr -dr com.apple.quarantine "{app_bundle}" 2>/dev/null',
-        f'rm -f "{dmg}"',
-        f'open "{app_bundle}"',
+        f"xattr -dr com.apple.quarantine {app} 2>/dev/null",
+        f"rm -f {image}",
+        f"open {app}",
         'rm -f "$0"',
         "",
     ])
@@ -175,14 +169,10 @@ def install_after_exit(installer: Path) -> None:
     if not can_self_update():
         raise RuntimeError("Updating works in the installed app only.")
     if sys.platform == "win32":
-        script = Path(tempfile.gettempdir()) / "cliphub-update.cmd"
-        script.write_text(windows_swap_script(str(installer), sys.executable), encoding="mbcs")
-        _detached(["cmd.exe", "/c", str(script)])
+        script = scripts.write(windows_swap_script(str(installer), sys.executable), ".cmd")
     else:
-        script = Path(tempfile.gettempdir()) / "cliphub-update.sh"
-        script.write_text(mac_swap_script(str(installer), str(app_bundle()), os.getpid()), encoding="utf-8")
-        script.chmod(0o755)
-        _detached(["/bin/sh", str(script)])
+        script = scripts.write(mac_swap_script(str(installer), str(app_bundle()), os.getpid()), ".sh")
+    scripts.run_detached(script)
 
 
 def clean_downloads() -> None:

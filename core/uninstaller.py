@@ -9,12 +9,12 @@ Running from source (`python main.py`) removes the data only, never the source f
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 
+from core import scripts
 from core.ffmpeg_setup import data_dir
 
 
@@ -30,6 +30,15 @@ def model_dirs() -> list[Path]:
     return found
 
 
+def _safe(path: Path) -> bool:
+    """Never a drive root, the home folder or a system folder: only things that are clearly ClipHUB's."""
+    resolved = path.resolve()
+    if len(resolved.parts) < 3 or resolved in (Path.home().resolve(), Path(tempfile.gettempdir()).resolve()):
+        return False
+    name = resolved.name.lower()
+    return "cliphub" in name or "faster-whisper" in name or resolved == Path(sys.executable).resolve()
+
+
 def targets() -> list[Path]:
     """Every folder and file to remove, the app last."""
     paths = [data_dir(), Path(tempfile.gettempdir()) / "cliphub-preview", *model_dirs()]
@@ -40,7 +49,7 @@ def targets() -> list[Path]:
             paths.append(Path(sys.executable).resolve().parents[2])  # …/ClipHUB.app
         else:
             paths.append(Path(sys.executable).resolve())
-    return paths
+    return [p for p in paths if _safe(p)]
 
 
 def remove_now(progress=None) -> None:
@@ -64,13 +73,14 @@ def remove_now(progress=None) -> None:
 
 
 def windows_script(paths: list[Path], pid: int) -> str:
+    q = scripts.cmd_quote
     lines = ["@echo off", ":wait", "ping -n 2 127.0.0.1 >nul",  # 1 s waits: timeout needs a console
-             f'tasklist /fi "PID eq {pid}" /nh | find "{pid}" >nul && goto wait',
+             f'tasklist /fi "PID eq {int(pid)}" /nh | find "{int(pid)}" >nul && goto wait',
              "set tries=0", ":again", "ping -n 2 127.0.0.1 >nul", "set left=0"]
     for path in paths:
-        lines += [f'if exist "{path}\\*" rmdir /s /q "{path}" >nul 2>&1',
-                  f'if exist "{path}" del /f /q "{path}" >nul 2>&1',
-                  f'if exist "{path}" set left=1']
+        lines += [f"if exist {q(str(path) + chr(92) + '*')} rmdir /s /q {q(path)} >nul 2>&1",
+                  f"if exist {q(path)} del /f /q {q(path)} >nul 2>&1",
+                  f"if exist {q(path)} set left=1"]
     lines += [r"reg delete HKCU\Software\ClipHUB /f >nul 2>&1",  # settings (after the app wrote its last)
               "set /a tries+=1", "if %left%==1 if %tries% lss 60 goto again",
               '(goto) 2>nul & del "%~f0"', ""]
@@ -78,9 +88,9 @@ def windows_script(paths: list[Path], pid: int) -> str:
 
 
 def mac_script(paths: list[Path], pid: int) -> str:
-    lines = ["#!/bin/sh", f"while kill -0 {pid} 2>/dev/null; do sleep 0.5; done"]
+    lines = ["#!/bin/sh", f"while kill -0 {int(pid)} 2>/dev/null; do sleep 0.5; done"]
     lines.append("defaults delete com.cliphub.ClipHUB 2>/dev/null")  # settings, also from the prefs cache
-    lines += [f'rm -rf "{path}"' for path in paths]
+    lines += [f"rm -rf {scripts.sh_quote(path)}" for path in paths]
     lines += ['rm -f "$0"', ""]
     return "\n".join(lines)
 
@@ -93,14 +103,7 @@ def remove_everything_after_exit() -> None:
     settings.sync()
     paths = targets()
     if sys.platform == "win32":
-        script = Path(tempfile.gettempdir()) / "cliphub-uninstall.cmd"
-        script.write_text(windows_script(paths, os.getpid()), encoding="mbcs")
-        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-        subprocess.Popen(["cmd.exe", "/c", str(script)], creationflags=flags, close_fds=True,  # noqa: S603
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        script = scripts.write(windows_script(paths, os.getpid()), ".cmd")
     else:
-        script = Path(tempfile.gettempdir()) / "cliphub-uninstall.sh"
-        script.write_text(mac_script(paths, os.getpid()), encoding="utf-8")
-        script.chmod(0o755)
-        subprocess.Popen(["/bin/sh", str(script)], start_new_session=True, close_fds=True,  # noqa: S603
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        script = scripts.write(mac_script(paths, os.getpid()), ".sh")
+    scripts.run_detached(script)
